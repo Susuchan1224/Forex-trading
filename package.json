@@ -1,0 +1,16 @@
+{
+  "name": "kurumi-fx-warning",
+  "version": "1.0.0",
+  "private": true,
+  "description": "《FX战士久留美》同人反FX赌博劝导网页 - 部署入口（前端 docs/ + 后端 backend/）",
+  "scripts": {
+    "start": "node backend/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
