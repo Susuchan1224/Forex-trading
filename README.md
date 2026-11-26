@@ -151,41 +151,19 @@ setLang('en')
 
 ---
 
-## 部署到 GitHub（新手完整步骤）
+## 部署到 GitHub
 
-### 第一步：在 GitHub 网页上创建仓库
+**仓库已创建**：<https://github.com/Susuchan1224/Forex-trading>
 
-1. 打开 <https://github.com/new>，登录你的账号
-2. **Repository name** 填：`kurumi-fx-warning`（或你喜欢的名字）
-3. **Description**（可选）填：`《FX战士久留美》同人反FX赌博劝导网页`
-4. 选择 **Public**（公开，GitHub Pages 需要）
-5. **重要**：下方三个初始化选项**全部不要勾选**
-   - ☐ Add a README file
-   - ☐ Add .gitignore
-   - ☐ Choose a license
-   （本地项目已包含这些文件，勾选会导致冲突）
-6. 点击 **Create repository**
+### 推送命令（与当前本地状态精确匹配）
 
-### 第二步：获取仓库地址
-
-创建成功后，页面会显示 **Quick setup** 区域。确认选中的是 **HTTPS** 标签页（不是 SSH），复制类似下面的地址：
-
-```
-https://github.com/<你的用户名>/kurumi-fx-warning.git
-```
-
-### 第三步：在本地推送
-
-在终端执行（把 `<你的用户名>` 换成实际用户名）：
+本地分支当前为 `master`，GitHub 默认分支为 `main`，**必须先重命名**再推送：
 
 ```bash
-# 进入项目目录
 cd "D:/apps/tools/workbuddy cache/2026-11-26-13-32-48/fx-kurumi-trap"
 
-# 关联远程仓库
-git remote add origin https://github.com/<你的用户名>/kurumi-fx-warning.git
-
-# 推送（首次推送需要 -u 参数）
+git branch -M main
+git remote add origin https://github.com/Susuchan1224/Forex-trading.git
 git push -u origin main
 ```
 
@@ -194,7 +172,13 @@ git push -u origin main
 - 在浏览器中完成 GitHub 登录/授权
 - 授权后终端会显示推送成功
 
-如果分支名提示不是 `main`，先执行 `git branch -M main` 再推送。
+### 若推送失败
+
+| 报错 | 原因 | 解决 |
+|------|------|------|
+| `remote origin already exists` | 重复添加远程 | `git remote set-url origin https://github.com/Susuchan1224/Forex-trading.git` |
+| `failed to push some refs` | 远端有本地没有的提交 | 先 `git pull origin main --allow-unrelated-histories`，再 push |
+| 认证失败 | 凭证未配置 | 确认 Credential Manager 弹窗已完成浏览器授权 |
 
 ### 第四步（可选）：开启 GitHub Pages 展示前端
 
