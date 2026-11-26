@@ -78,9 +78,13 @@ let lastTrackAt = 0;
 let backendOK = false;
 const API_BASE = '';   // 同源部署；开发时可改为 'http://localhost:3001'
 
+// 发布环境的分享网关要求每个请求携带 sharecode；本地开发时为空，不影响功能
+const SHARE_CODE = new URLSearchParams(location.search).get('sharecode') || '';
+const apiURL = path => SHARE_CODE ? `${API_BASE}${path}?sharecode=${encodeURIComponent(SHARE_CODE)}` : `${API_BASE}${path}`;
+
 async function initSession() {
   try {
-    const res = await fetch(`${API_BASE}/api/session`, {
+    const res = await fetch(apiURL('/api/session'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -116,7 +120,7 @@ async function flush() {
   const batch = eventQueue.splice(0);
   lastTrackAt = Date.now();
   try {
-    await fetch(`${API_BASE}/api/track`, {
+    await fetch(apiURL('/api/track'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, events: batch })
@@ -128,7 +132,7 @@ async function loadStats() {
   const totalEl = $('#statTotal');
   if (!totalEl) return;
   try {
-    const res = await fetch(`${API_BASE}/api/stats`);
+    const res = await fetch(apiURL('/api/stats'));
     const s = await res.json();
     const fmt = n => Number(n).toLocaleString('zh-CN');
     totalEl.textContent = fmt(s.total);
