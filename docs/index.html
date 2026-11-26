@@ -69,12 +69,13 @@
     <div class="device" aria-label="模拟交易界面">
       <div class="phone-mock">
         <div class="app-head"><span data-i18n="app.title" id="horrorAppTitle">我的账户</span><span class="dot">●</span></div>
-        <div class="balance"><small data-i18n="app.balance">账户余额</small><strong id="heroBalance">¥300,000</strong></div>
+        <div class="balance"><small data-i18n="app.equity">账户净值</small><strong id="heroBalance">¥300,000</strong></div>
         <div class="pnl up" id="heroTodayBox"><span data-i18n="app.today">今日盈亏</span><strong id="heroToday">+¥12,450</strong></div>
         <div class="mini-chart" id="heroChart" aria-hidden="true"></div>
         <div class="app-row"><span data-i18n="app.position">当前持仓</span><b id="heroPosition">USD/JPY ×50</b></div>
         <div class="app-row"><span data-i18n="app.leverage">杠杆</span><b class="accent">50×</b></div>
         <div class="app-row"><span data-i18n="app.margin">保证金率</span><b class="ok" id="heroMargin">充足</b></div>
+        <div class="app-row"><span data-i18n="app.freeMargin">可用保证金</span><b id="heroFree">¥253,450</b></div>
       </div>
     </div>
   </div>
@@ -214,8 +215,9 @@
       <p class="lead" data-i18n="chart.lead">直到那根 K 线出现。</p>
     </div>
     <div class="chart-panel twitch">
-      <div class="chart-hud"><span data-i18n="chart.pair">AUD/JPY</span><span id="chartPnl" class="up">+¥124,500</span></div>
-      <div class="chart-canvas" id="bigChart" aria-label="模拟 K 线走势：先上涨后暴跌"></div>
+      <div class="chart-hud"><span data-i18n="chart.pair">USD/JPY</span><span id="chartPnl" class="up">+¥124,500</span></div>
+      <div class="chart-canvas" id="bigChart" aria-label="USD/JPY 模拟行情：先上涨后暴跌，非真实数据"></div>
+      <div class="chart-legend" id="chartLegend"></div>
     </div>
   </div>
 </section>
@@ -292,13 +294,14 @@
 <section class="sec" data-bg="#141018" data-fg="#E8E2EC" data-ac="#8A3A5A" data-d="0.88">
   <div class="wrap center">
     <div class="kicker" data-i18n="truth.kicker">真相</div>
-    <h2 class="truth-title" data-i18n-html="truth.h2">这不是投资。<br>这是赌博。</h2>
-    <p class="lead" data-i18n="truth.lead">投资是基于价值的长期判断。赌博是赌价格的短期波动。<br>当你用 50 倍杠杆赌一根 K 线的方向时——你在赌博。</p>
+    <h2 class="truth-title" data-i18n-html="truth.h2">交易本身不是赌博。<br>失控的它才是。</h2>
+    <p class="lead" data-i18n="truth.lead">问题不在外汇，而在高杠杆、追损和停不下来的手。<br>当一笔交易的输赢不再取决于判断，而取决于你还能撑几次——它就变成了赌博。</p>
     <div class="truth-facts">
-      <div class="fact"><b>50×</b><span data-i18n="fact.leverage">杠杆让 2% 的波动变成 100% 的盈亏</span></div>
+      <div class="fact"><b>50×</b><span data-i18n="fact.leverage">杠杆放大波动：约 2% 的不利变动，就可能吃掉全部本金</span></div>
       <div class="fact"><b>03:14</b><span data-i18n="fact.time">剧情里，久留美在凌晨三点还在看盘</span></div>
       <div class="fact"><b>∞</b><span data-i18n="fact.loop">「再最后一次」的循环，没有终点</span></div>
     </div>
+    <p class="fact-note">注：以上为简化示意。实际杠杆、保证金比例、强平线与负余额保护规则因交易商、品种和地区而异。</p>
   </div>
 </section>
 

@@ -111,6 +111,12 @@ document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
 
 /* ---------------- 2. 后端联动 ---------------- */
 
+// 无障碍：尊重系统"减少动态效果"偏好（噪点/抖动等装饰动画会停用）
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 剧情状态：是否已触发回顶惊悚翻转（提前声明，供 frame() 早期读取）
+let horrorRevealed = false;
+
 let sessionId = null;
 let visitNumber = 0;
 let eventQueue = [];
@@ -122,7 +128,11 @@ const API_BASE = '';   // 同源部署；开发时可改为 'http://localhost:30
 const SHARE_CODE = new URLSearchParams(location.search).get('sharecode') || '';
 const apiURL = path => SHARE_CODE ? `${API_BASE}${path}?sharecode=${encodeURIComponent(SHARE_CODE)}` : `${API_BASE}${path}`;
 
+const MAX_QUEUE = 80;        // 队列上限，超出丢弃最旧事件，避免无后端时无限增长
+const FLUSH_TIMEOUT = 6000;  // 单次上报超时
+
 async function initSession() {
+  // 纯静态部署 / 无后端时，静默降级：统计不显示，但页面功能完全不受影响
   try {
     const res = await fetch(apiURL('/api/session'), {
       method: 'POST',
@@ -131,72 +141,83 @@ async function initSession() {
         userAgent: navigator.userAgent.slice(0, 300),
         screen: `${innerWidth}x${innerHeight}`,
         language: LANG
-      })
+      }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    // 校验响应结构，避免把错误页/异常 JSON 当成成功
+    if (!data || typeof data.sessionId !== 'string') throw new Error('bad payload');
     sessionId = data.sessionId;
-    visitNumber = data.visitNumber;
+    visitNumber = Number(data.visitNumber) || 0;
     backendOK = true;
     // 访客序号仅用于后端统计，不在页面上展示（避免破坏沉浸感）
   } catch (e) {
-    // 直接双击 index.html 打开时无后端：静默降级，不在页面提示
+    // 无后端：静默降级，且清空队列防止内存增长
+    backendOK = false;
+    eventQueue.length = 0;
   }
 }
 
 /** 把事件放入队列，节流上报（3 秒或 20 条触发一次） */
 function track(type, value) {
+  // 无后端时不入队——否则队列会永久堆积造成内存泄漏
+  if (!backendOK) return;
   eventQueue.push({ type, value: value === undefined ? null : String(value).slice(0, 120), t: Date.now() });
+  // 硬上限：丢弃最旧的事件，保留最近的上下文
+  if (eventQueue.length > MAX_QUEUE) eventQueue.splice(0, eventQueue.length - MAX_QUEUE);
   if (Date.now() - lastTrackAt > 3000 || eventQueue.length >= 20) flush();
 }
 
+let flushing = false;
 async function flush() {
-  if (!sessionId || !eventQueue.length) return;
+  if (!backendOK || !sessionId || !eventQueue.length || flushing) return;
+  flushing = true;
   const batch = eventQueue.splice(0);
   lastTrackAt = Date.now();
   try {
-    await fetch(apiURL('/api/track'), {
+    const res = await fetch(apiURL('/api/track'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, events: batch })
+      body: JSON.stringify({ sessionId, events: batch }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined
     });
-  } catch (e) { /* 网络失败不中断浏览体验 */ }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+  } catch (e) {
+    // 失败时把本批事件放回队首（最多保留 MAX_QUEUE 条），下一轮再试
+    eventQueue = batch.concat(eventQueue).slice(-MAX_QUEUE);
+  } finally {
+    flushing = false;
+  }
 }
 
 async function loadStats() {
   const totalEl = $('#statTotal');
   if (!totalEl) return;
+  const showDash = () => {
+    totalEl.textContent = '—';
+    const a = $('#statAbstain'), d = $('#statDwell');
+    if (a) a.textContent = '—';
+    if (d) d.textContent = '—';
+  };
   try {
-    const res = await fetch(apiURL('/api/stats'));
+    const res = await fetch(apiURL('/api/stats'), {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const s = await res.json();
+    // 严格校验：任一字段不是有限数字就降级，避免显示 NaN / undefined
+    const ok = s && ['total', 'abstained', 'avgDwell'].every(k => Number.isFinite(Number(s[k])));
+    if (!ok) throw new Error('bad payload');
     const fmt = n => Number(n).toLocaleString('zh-CN');
     totalEl.textContent = fmt(s.total);
-    $('#statAbstain').textContent = fmt(s.abstained);
-    $('#statDwell').textContent = fmt(s.avgDwell);
+    const a = $('#statAbstain'), d = $('#statDwell');
+    if (a) a.textContent = fmt(s.abstained);
+    if (d) d.textContent = fmt(s.avgDwell);
   } catch (e) {
-    totalEl.textContent = '—';
-    $('#statAbstain').textContent = '—';
-    $('#statDwell').textContent = '—';
+    showDash();
   }
 }
-
-/* 页面卸载前尽力上报队列 */
-addEventListener('pagehide', () => { track('leave'); flush(); });
-
-/* 记录离开 / 返回（配合“回来”提示） */
-let leftAt = 0;
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    leftAt = Date.now();
-    track('leave');
-  } else {
-    track('return');
-    if (leftAt && Date.now() - leftAt > 1500 && D > .5) {
-      toast(`你离开了 ${Math.round((Date.now() - leftAt) / 1000)} 秒。市场可没停。`);
-    }
-    leftAt = 0;
-  }
-});
 
 function toast(msg) {
   const el = $('#toast');
@@ -234,6 +255,9 @@ function frame() {
   root.style.setProperty('--fg', themeColor(mix(s.dataset.fg, n.dataset.fg, p), 'fg'));
   root.style.setProperty('--accent', themeColor(mix(s.dataset.ac, n.dataset.ac, p), 'ac'));
   D = +s.dataset.d + (+n.dataset.d - +s.dataset.d) * p;
+  // 回顶惊悚后：D 不放回 0，而是锁定在"余悸"区间，
+  // 让配色、噪点、暗角维持在阴郁状态，与已翻转的文案一致
+  if (horrorRevealed) D = Math.max(D, .18);
   root.style.setProperty('--d', D.toFixed(3));
 
   // 覆盖层强度随 D 增长：噪点在中段冷灰区提前出现，红色段才达到最强
@@ -265,6 +289,8 @@ function frame() {
   ];
   let tt = titles[0][1];
   titles.forEach(([th, v]) => { if (D >= th) tt = v; });
+  // 剧情状态优先：回顶惊悚后标题固定为清算语，不被滚动进度覆盖回"轻松赚回"
+  if (horrorRevealed) tt = 'Kurumi FX · 清算完成';
   if (!document.hidden && document.title !== tt) document.title = tt;
 
   // 记录进入新 section（用于行为分析）
@@ -300,7 +326,9 @@ addEventListener('resize', frame);
 const nctx = noiseEl.getContext('2d');
 const imgData = nctx.createImageData(320, 180);
 setInterval(() => {
+  if (REDUCED_MOTION) return;              // 用户偏好减少动态效果：不刷新噪点
   if (+noiseEl.style.opacity < .01) return;
+  if (document.hidden) return;             // 后台不绘制
   for (let k = 0; k < imgData.data.length; k += 4) {
     const v = Math.random() * 255;
     imgData.data[k] = imgData.data[k + 1] = imgData.data[k + 2] = v;
@@ -309,8 +337,9 @@ setInterval(() => {
   nctx.putImageData(imgData, 0, 0);
 }, 60);
 
-/* 4.2 随机抖动（幅度随 D 增强） */
+/* 4.2 随机抖动（幅度随 D 增强）——用 CSS 自定义属性驱动，不覆盖元素原有 transform */
 setInterval(() => {
+  if (REDUCED_MOTION || document.hidden) return;
   if (D < .2) return;
   const all = $$('.twitch');
   if (!all.length) return;
@@ -319,9 +348,14 @@ setInterval(() => {
   if (r.bottom < 0 || r.top > innerHeight) return;
   if (Math.random() < D * .7) {
     const k = D * D * 9;
-    const base = el.style.transform;
-    el.style.transform = `translate(${(Math.random() - .5) * k}px,${(Math.random() - .5) * k}px) skewX(${(Math.random() - .5) * k * .5}deg)`;
-    setTimeout(() => { el.style.transform = base; }, 60 + Math.random() * 120);
+    el.style.setProperty('--tw-x', `${(Math.random() - .5) * k}px`);
+    el.style.setProperty('--tw-y', `${(Math.random() - .5) * k}px`);
+    el.style.setProperty('--tw-sk', `${(Math.random() - .5) * k * .5}deg`);
+    setTimeout(() => {
+      el.style.setProperty('--tw-x', '0px');
+      el.style.setProperty('--tw-y', '0px');
+      el.style.setProperty('--tw-sk', '0deg');
+    }, 60 + Math.random() * 120);
   }
 }, 130);
 
@@ -351,118 +385,298 @@ function poke() {
 addEventListener('pointermove', poke, { passive: true });
 addEventListener('keydown', poke);
 
-/* 4.4 K 线绘制（模拟：先涨后暴跌） */
-function drawChart() {
-  const box = $('#bigChart');
-  if (!box) return;
-  const W = 1000, H = 320;
-  const pts = [];
-  let price = 60;
-  for (let i = 0; i < 64; i++) {
-    if (i < 44) price += 1.2 + Math.random() * 2.2;        // 稳步上涨
-    else price -= 5 + Math.random() * 4;                    // 暴跌
-    pts.push(Math.max(4, Math.min(H - 20, price)));
-  }
-  const max = Math.max(...pts), min = Math.min(...pts);
-  const norm = v => H - 20 - ((v - min) / (max - min || 1)) * (H - 50);
-  const coords = pts.map((v, i) => `${(i / (pts.length - 1) * W).toFixed(1)},${norm(v).toFixed(1)}`).join(' ');
-  const area = `M0,${H} L${coords.replaceAll(' ', ' L')} L${W},${H} Z`;
-  const lastX = W, lastY = norm(pts[pts.length - 1]);
+/* ---------------- 4.4 行情数据源（主图 / 迷你图 / 盈亏 共用） ---------------- */
 
-  box.innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="模拟行情：先上涨后暴跌">
-      <defs>
-        <linearGradient id="upArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#22C55E" stop-opacity=".35"/>
-          <stop offset="100%" stop-color="#22C55E" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient id="downArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#EF4444" stop-opacity=".4"/>
-          <stop offset="100%" stop-color="#EF4444" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      ${Array.from({ length: 5 }, (_, k) =>
-        `<line x1="0" y1="${k * H / 4}" x2="${W}" y2="${k * H / 4}" stroke="#1E293B" stroke-width="1" opacity=".5"/>`
-      ).join('')}
-      <path d="${area}" fill="url(#upArea)"/>
-      <polyline points="${coords}" fill="none" stroke="#4ADE80" stroke-width="2.5" stroke-linejoin="round"/>
-      <line x1="${W * .68}" y1="0" x2="${W * .68}" y2="${H}" stroke="#EF4444" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>
-      <circle cx="${lastX}" cy="${lastY}" r="5" fill="#EF4444"/>
-    </svg>`;
+/**
+ * 单一行情源：一个价格序列同时驱动
+ *   ① 主图（大图，含刻度与事件标记）
+ *   ② 迷你图（顶部账户卡片内的走势）
+ *   ③ 账户浮动盈亏（由价格相对建仓价的变动换算）
+ * 这样图表与数字不会互相矛盾。
+ *
+ * 价格为 USD/JPY 的简化模拟值（约 155 附近），与持仓标的一致。
+ * 所有数值均为剧情演示，不构成任何投资参考。
+ */
+const market = {
+  base: 155.00,          // 基准价
+  price: 155.00,         // 当前价
+  entry: 154.80,         // 建仓价
+  history: [],           // 最近价格序列（迷你图用）
+  points: 30,            // 迷你图保留点数
+  tickMs: 2000,
+  // 每 1 日元价格变动对应的盈亏（简化：仓位规模 × 手数换算后的系数）
+  pnlPerYen: 6000
+};
+
+/** 由当前价与建仓价换算浮动盈亏，保证与图表同源 */
+function pnlFromPrice(price) {
+  return (price - market.entry) * market.pnlPerYen;
 }
 
-/* 4.5 顶部 App 迷你 K 线：滚动窗口式走势图 */
-let miniTrend = 1;   // 1=上涨盈利，-1=爆仓下跌
-let priceHistory = []; // 保留最近 N 个价格点，形成连续走势
-const CHART_POINTS = 30;
+/** 初始化历史序列，使首帧就有完整走势 */
+function initMarketHistory() {
+  market.price = market.entry;
+  market.history = [];
+  let p = market.entry;
+  for (let i = 0; i < market.points; i++) {
+    p += (Math.random() - .42) * .08;
+    market.history.push(p);
+  }
+  market.price = market.history[market.history.length - 1];
+  ACCOUNT.floatingPnl = pnlFromPrice(market.price);
+}
 
+/** 行情推进一站：更新价格 → 历史窗口 → 盈亏 → 两图 + 账户 */
+function tickMarket() {
+  // 爆仓后价格停摆（“行情停止”也是叙事的一部分）
+  if (ACCOUNT.state === 'bust') return;
+
+  // 缓慢上行的随机漫步：α 决定趋势偏向，β 决定波动幅度
+  const drift = .012;                       // 轻微上行（制造“一直在赚”的错觉）
+  const vol = .10;                          // 波动幅度（日元）
+  const next = market.price + (Math.random() - .5) * vol + drift;
+  market.price = Math.max(market.base * .8, Math.min(market.base * 1.2, next));
+  market.history.push(market.price);
+  if (market.history.length > market.points) market.history.shift();
+
+  // 盈亏由价格派生——不再独立随机
+  ACCOUNT.floatingPnl = pnlFromPrice(market.price);
+
+  drawMiniChart();
+  renderAccount();
+}
+
+/* 4.4a 迷你图：直接用 market.history 绘制 */
 function drawMiniChart() {
   const box = $('#heroChart');
   if (!box) return;
   const W = 300, H = 80;
-  if (!priceHistory.length) {
-    let p = 40;
-    for (let i = 0; i < CHART_POINTS; i++) { p += (Math.random() - .35) * 5; priceHistory.push(p); }
+  const pts = market.history;
+  if (!pts.length) return;
+  const max = Math.max(...pts), min = Math.min(...pts);
+  const span = max - min || 1;
+  const norm = v => H - 8 - ((v - min) / span) * (H - 16);
+  const coords = pts.map((v, i) =>
+    `${(i / (pts.length - 1) * W).toFixed(1)},${norm(v).toFixed(1)}`).join(' ');
+  const up = ACCOUNT.state !== 'bust' && pts[pts.length - 1] >= pts[0];
+  const color = up ? '#2563EB' : '#DC2626';
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
+}
+
+/* 4.4b 主图：以完整售价序列绘制，带刻度、事件标记与图例 */
+function drawChart() {
+  const box = $('#bigChart');
+  if (!box) return;
+  const W = 1000, H = 320;
+  const N = 64;
+
+  // 从 market.entry 出发构造一段“先涨后暴跌”的完整行情（与迷你图同一价格体系）
+  const pts = [];
+  let p = market.entry;
+  const crashAt = 44;                        // 第 44 根开始转折
+  for (let i = 0; i < N; i++) {
+    if (i < crashAt) p += .05 + Math.random() * .12;         // 稳步上行
+    else p -= .55 + Math.random() * .45;                     // 暴跌
+    pts.push(p);
   }
-  const pts = priceHistory.map(v => Math.max(6, Math.min(H - 6, v)));
-  const coords = pts.map((v, i) => `${(i / (pts.length - 1) * W).toFixed(1)},${v.toFixed(1)}`).join(' ');
-  const color = miniTrend < 0 ? '#DC2626' : '#2563EB';
-  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
+  const max = Math.max(...pts), min = Math.min(...pts);
+  const span = max - min || 1;
+  const norm = v => H - 46 - ((v - min) / span) * (H - 76);
+  const coords = pts.map((v, i) => `${(i / (N - 1) * W).toFixed(1)},${norm(v).toFixed(1)}`).join(' ');
+  const area = `M0,${H - 30} L${coords.replaceAll(' ', ' L')} L${W},${H - 30} Z`;
+  const lastY = norm(pts[pts.length - 1]);
+  const crashX = crashAt / (N - 1) * W;
+  const maxY = norm(max);
+
+  // 价格刻度（右轴）：4 档，用真实价格数值
+  const priceTicks = Array.from({ length: 4 }, (_, k) => {
+    const v = min + (span / 3) * k;
+    const y = norm(v);
+    return `<text x="${W - 8}" y="${y - 5}" fill="#94A3B8" font-size="18"
+              font-family="monospace" text-anchor="end">${v.toFixed(2)}</text>`;
+  }).join('');
+
+  // 时间刻度（底轴）
+  const timeTicks = ['09:00', '12:00', '15:00', '18:00', '21:00'].map((t, k) => {
+    const x = (k / 4) * (W - 120) + 20;
+    return `<text x="${x}" y="${H - 8}" fill="#94A3B8" font-size="17"
+              font-family="monospace">${t}</text>`;
+  }).join('');
+
+  box.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+         aria-label="USD/JPY 模拟行情：先上涨后暴跌，非真实数据">
+      <defs>
+        <linearGradient id="upArea" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#22C55E" stop-opacity=".30"/>
+          <stop offset="100%" stop-color="#22C55E" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="downArea" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#EF4444" stop-opacity=".35"/>
+          <stop offset="100%" stop-color="#EF4444" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      ${Array.from({ length: 5 }, (_, k) => {
+        const y = 20 + k * (H - 50) / 4;
+        return `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#1E293B"
+                 stroke-width="1" opacity=".45"/>`;
+      }).join('')}
+      ${Array.from({ length: 6 }, (_, k) => {
+        const x = k * W / 5;
+        return `<line x1="${x}" y1="20" x2="${x}" y2="${H - 30}" stroke="#1E293B"
+                 stroke-width="1" opacity=".28"/>`;
+      }).join('')}
+      <path d="${area}" fill="url(#upArea)"/>
+      <polyline points="${coords}" fill="none" stroke="#4ADE80"
+                stroke-width="2.5" stroke-linejoin="round"/>
+      <line x1="${crashX}" y1="20" x2="${crashX}" y2="${H - 30}"
+            stroke="#EF4444" stroke-width="1" stroke-dasharray="5 5" opacity=".7"/>
+      <circle cx="${crashX}" cy="${maxY}" r="5" fill="#EF4444"/>
+      <text x="${crashX + 12}" y="${maxY - 10}" fill="#EF4444" font-size="18"
+            font-family="monospace">高点 ${max.toFixed(2)}</text>
+      ${priceTicks}
+      ${timeTicks}
+    </svg>`;
+
+  // 主图下方的图例/注释（说明是模拟数据与转折事件）
+  const legend = $('#chartLegend');
+  if (legend) {
+    legend.innerHTML = `
+      <span class="lg-dot up"></span><span>USD/JPY · 模拟行情</span>
+      <span class="lg-dot crash"></span><span>事件：强制平仓触发点</span>
+      <span class="lg-note">数值为剧情演示，非真实市场数据</span>`;
+  }
 }
 
-/* 4.5b 账户看板：自动递增模拟 + 回到顶部的爆仓翻转 */
-let accountState = 'profit';   // 'profit' | 'bust'
-let witnessedBottom = false;   // 是否滚到底部读过真相
-let balanceBase = 300000;
-let pnlValue = 12450;          // 当前浮动盈亏，独立于滚动
+/* 4.5b 账户模型：单一数据源，所有显示值由 derive() 派生 */
 
-/** 定时器驱动：每 2 秒账户小幅增长一点，K 线推入新点 */
-function tickAccount() {
-  if (accountState !== 'profit') return;
-  // 盈亏缓慢上行，带轻微随机波动；每次增加约 180~900 日元
-  pnlValue += Math.round(180 + Math.random() * 720);
-  // K 线：推入一个新点（延续上一点，偏上行），移除最旧的点
-  const last = priceHistory[priceHistory.length - 1] || 40;
-  const next = Math.max(8, Math.min(72, last + (Math.random() - .32) * 7));
-  priceHistory.push(next);
-  if (priceHistory.length > CHART_POINTS) priceHistory.shift();
-  drawMiniChart();
-  renderAccountNumbers();
+/**
+ * 说明（也写进 README）：
+ * 这是一个简化的演示模型，用于叙事而非真实交易计算。
+ *   equity      = deposit + floatingPnl          （账户净值）
+ *   usedMargin  = notional / leverage            （已用保证金，此处固定）
+ *   freeMargin  = equity - usedMargin            （可用保证金）
+ *   marginLevel = equity / usedMargin * 100%     （保证金率）
+ * 真实市场里保证金、强平线与负余额保护规则因平台和品种而异，
+ * 这里的换算只服务于剧情，不能当作实际交易依据。
+ */
+const ACCOUNT = {
+  deposit: 300000,        // 初始本金
+  floatingPnl: 12450,     // 浮动盈亏（可正可负）
+  usedMargin: 60000,      // 已用保证金（50 倍杠杆下的占用）
+  state: 'profit'         // 'profit' | 'bust'
+};
+
+let witnessedBottom = false;
+
+/** 从 ACCOUNT 派生全部展示值——任何显示都必须走这里，避免数字互相矛盾 */
+function derive() {
+  const equity = ACCOUNT.deposit + ACCOUNT.floatingPnl;
+  const freeMargin = equity - ACCOUNT.usedMargin;
+  // 保证金率：净值 / 已用保证金。净值 <= 0 时视为 0，避免出现负百分比
+  const marginLevel = ACCOUNT.usedMargin > 0 ? Math.max(0, equity / ACCOUNT.usedMargin * 100) : 0;
+  return { equity, freeMargin, marginLevel };
 }
 
-function renderAccountNumbers() {
-  const balanceEl = $('#heroBalance');
-  const pnlEl = $('#heroToday');
-  if (!balanceEl || !pnlEl) return;
-  balanceEl.textContent = '¥' + (balanceBase + pnlValue).toLocaleString('zh-CN');
-  pnlEl.textContent = (pnlValue >= 0 ? '+' : '-') + '¥' + Math.abs(pnlValue).toLocaleString('zh-CN');
+/** 保证金率文案分级：随亏损逐级恶化，这是叙事张力的来源 */
+function marginText(level) {
+  if (level >= 300) return { text: '充足', cls: 'ok' };
+  if (level >= 150) return { text: '偏低', cls: 'warn' };
+  if (level >= 100) return { text: '危险', cls: 'bad' };
+  return { text: '即将强平', cls: 'bad' };
 }
 
-/** 从底部回到顶部：账户爆仓翻转（保留入口供回顶按钮调用） */
-function bustAccount() {
+/** 统一的渲染入口：所有数字只在这里写入 DOM */
+function renderAccount() {
+  const { equity, freeMargin, marginLevel } = derive();
   const balanceEl = $('#heroBalance');
   const pnlEl = $('#heroToday');
   const pnlBox = $('#heroTodayBox');
   const marginEl = $('#heroMargin');
-  const posEl = $('#heroPosition');
-  if (accountState === 'bust' || !balanceEl) return;
-  accountState = 'bust';
-  miniTrend = -1;
-  priceHistory = [];
-  // 爆仓 K 线：断崖式
-  let p = 60;
-  for (let i = 0; i < CHART_POINTS; i++) {
-    if (i > 8) p -= 4 + Math.random() * 3;
-    priceHistory.push(Math.max(6, p));
+  const freeEl = $('#heroFree');
+  if (!balanceEl || !pnlEl) return;
+
+  balanceEl.textContent = '¥' + Math.round(equity).toLocaleString('zh-CN');
+  const p = ACCOUNT.floatingPnl;
+  pnlEl.textContent = (p >= 0 ? '+' : '-') + '¥' + Math.abs(Math.round(p)).toLocaleString('zh-CN');
+  if (pnlBox) pnlBox.className = 'pnl ' + (p >= 0 ? 'up' : 'down');
+  if (freeEl) freeEl.textContent = '¥' + Math.round(Math.max(0, freeMargin)).toLocaleString('zh-CN');
+  if (marginEl) {
+    const m = marginText(marginLevel);
+    marginEl.textContent = m.text;
+    marginEl.className = m.cls;
   }
-  drawMiniChart();
-  track('account_bust_after_return');
-  balanceEl.style.color = '#DC2626';
-  pnlBox.className = 'pnl down';
-  pnlEl.textContent = '-¥300,000';
-  if (marginEl) { marginEl.textContent = '强制平仓'; marginEl.className = 'bad'; }
-  if (posEl) posEl.textContent = '已清空';
-  animateNumber(balanceEl, balanceBase, 0, 1400, '¥');
+  return { equity, freeMargin, marginLevel };
+}
+
+/** 定时器驱动：账户缓慢增长（仅 profit 状态），行情与盈亏同源 */
+function tickAccount() {
+  if (ACCOUNT.state !== 'profit') return;
+  // 由行情 tick 决定盈亏变化，保证图表与数字一致（见 tickMarket）
+  tickMarket();
+}
+
+/** 仅用于测试/调试：重置到初始状态 */
+function resetAccount() {
+  ACCOUNT.deposit = 300000;
+  ACCOUNT.floatingPnl = 12450;
+  ACCOUNT.usedMargin = 60000;
+  ACCOUNT.state = 'profit';
+  witnessedBottom = false;
+  renderAccount();
+}
+
+/**
+ * 爆仓：从「当前显示值」开始动画，避免数字先回跳。
+ * 亏损推进到本金耗尽，保证金率跌破强平线，持仓被清空。
+ */
+function bustAccount() {
+  if (ACCOUNT.state === 'bust') return;
+  // 先快照当前值，再切换状态——避免中途异常导致“状态已变但画面没动”
+  const startEquity = derive().equity;
+  const startPnl = ACCOUNT.floatingPnl;
+
+  // 记录爆仓起点，供 K 线绘制使用
+  market.mode = 'bust';
+  market.crashFrom = market.history[market.history.length - 1] || market.price;
+  ACCOUNT.state = 'bust';
+
+  const balanceEl = $('#heroBalance');
+  const pnlEl = $('#heroToday');
+  const pnlBox = $('#heroTodayBox');
+  const marginEl = $('#heroMargin');
+  const freeEl = $('#heroFree');
+  const posEl = $('#heroPosition');
+
+  track('account_bust');
+
+  // 净值从当前值平滑跌到 0
+  if (balanceEl) animateNumber(balanceEl, startEquity, 0, 1600, '¥');
+  // 浮亏从当前值跌到 -本金，两者同步推进
+  const st = performance.now();
+  (function stepPnl(now) {
+    const k = clamp((now - st) / 1600);
+    const eased = 1 - Math.pow(1 - k, 3);
+    const pnl = startPnl + (-ACCOUNT.deposit - startPnl) * eased;
+    ACCOUNT.floatingPnl = pnl;
+    if (pnlEl) {
+      pnlEl.textContent = (pnl >= 0 ? '+' : '-') + '¥' + Math.abs(Math.round(pnl)).toLocaleString('zh-CN');
+    }
+    // 保证金率随净值同步下降
+    const lvl = Math.max(0, (ACCOUNT.deposit + pnl) / ACCOUNT.usedMargin * 100);
+    if (marginEl) {
+      const m = marginText(lvl);
+      marginEl.textContent = m.text;
+      marginEl.className = m.cls;
+    }
+    if (freeEl) freeEl.textContent = '¥' + Math.round(Math.max(0, ACCOUNT.deposit + pnl - ACCOUNT.usedMargin)).toLocaleString('zh-CN');
+    if (k < 1) requestAnimationFrame(stepPnl);
+  })(st);
+
+  if (pnlBox) pnlBox.className = 'pnl down';
+  if (balanceEl) balanceEl.style.color = '#DC2626';
+  if (posEl) posEl.textContent = '已强平';
 }
 
 // 记录是否已读到真相（D>0.95 视为读完）
@@ -657,8 +871,6 @@ const HORROR_COPY = {
   horrorTrusted:'已有 11,998 人再也回不去',
   horrorAppTitle:'你的账户（已清算）',
 };
-let horrorRevealed = false;
-
 function applyHorrorCopy() {
   for (const [id, text] of Object.entries(HORROR_COPY)) {
     const el = document.getElementById(id);
@@ -694,6 +906,13 @@ $('footer .back')?.addEventListener('click', e => { e.preventDefault(); goBackTo
 function initReveal() {
   const targets = $$('.card, .thought, .quote, .step, .fact, .chip, .voices blockquote, .official-warning');
   if (!targets.length) return;
+
+  // 降级：不支持 IntersectionObserver 或用户要求减少动效时，直接显示，绝不让正文一直隐藏
+  if (!('IntersectionObserver' in window) || REDUCED_MOTION) {
+    targets.forEach(el => el.classList.add('in'));
+    return;
+  }
+
   targets.forEach(el => el.classList.add('reveal'));
   const io = new IntersectionObserver((entries) => {
     entries.forEach((e, i) => {
@@ -704,14 +923,46 @@ function initReveal() {
     });
   }, { threshold: .14, rootMargin: '0px 0px -40px 0px' });
   targets.forEach(el => io.observe(el));
+
+  // 兜底：若 3 秒后仍有元素未显示（例如 IO 被某些环境静默禁用），强制全部显示
+  setTimeout(() => {
+    targets.forEach(el => {
+      if (!el.classList.contains('in')) el.classList.add('in');
+    });
+  }, 3000);
 }
+
+/* ---------------- 5.8 行情循环（页面隐藏时暂停，降低无谓开销） ---------------- */
+
+let marketTimer = null;
+
+function startMarketLoop() {
+  if (marketTimer) return;
+  marketTimer = setInterval(() => {
+    // 页面在后台时不推进行情，避免无意义的计算与耗电
+    if (document.hidden) return;
+    tickMarket();
+  }, market.TICK_MS || market.tickMs);
+}
+
+function stopMarketLoop() {
+  if (marketTimer) { clearInterval(marketTimer); marketTimer = null; }
+}
+
+// 前后台切换：回到前台时恢复推进（并补算一次，避免数字“停滞”观感）
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopMarketLoop();
+  else startMarketLoop();
+});
 
 /* ---------------- 6. 启动 ---------------- */
 
 (function boot() {
   initReveal();
+  initMarketHistory();     // 建立行情序列（主图/迷你图/盈亏的唯一来源）
   drawChart();
   drawMiniChart();
+  renderAccount();         // 首帧渲染账户全部字段
   applyStatic();
   frame();
   poke();
@@ -720,10 +971,8 @@ function initReveal() {
   // 定期上报队列（防止用户停留时队列积压）
   setInterval(flush, 4000);
 
-  // 账户看板：每 2 秒自动递增（与滚动完全解耦），并初始化数字
-  renderAccountNumbers();
-  drawMiniChart();
-  setInterval(tickAccount, 2000);
+  // 行情/账户推进：单一 tick 同时更新价格、盈亏、两图（页面隐藏时跳过）
+  startMarketLoop();
 
   // 调试/分享：URL 加 ?at=0.5 可跳转到指定滚动进度（0~1）
   // 用途：快速定位到某个叙事阶段截图、分享特定章节给朋友

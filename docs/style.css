@@ -74,7 +74,7 @@ h1 em{font-style:normal;color:var(--accent)}
 .lead{font-size:21px;color:var(--muted);max-width:620px;line-height:1.8}
 .ctas{display:flex;gap:12px;margin-top:32px;flex-wrap:wrap}
 .tiny{font-size:13px;color:var(--muted);margin-top:18px}
-.tiny button{background:none;border:0;font:inherit;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.tiny button{background:none;border:0;font:inherit;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px;margin-left:12px}
 .visitor-note{font-size:12px;color:var(--muted);margin-top:10px;font-family:var(--mono);opacity:.75}
 
 /* 模拟 App 界面 */
@@ -101,6 +101,8 @@ h1 em{font-style:normal;color:var(--accent)}
 .app-row b{font-weight:700}
 .app-row .accent{color:#2563EB}
 .app-row .ok{color:#16A34A}
+.app-row .warn{color:#D97706}
+.app-row .bad{color:#DC2626;font-weight:800}
 .logos{padding:10px 0 70px;text-align:center}
 .logos p{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.05em}
 .logos .row2{display:flex;justify-content:center;gap:40px;flex-wrap:wrap;margin-top:20px;font-weight:800;font-size:17px;opacity:.4;letter-spacing:-.02em}
@@ -281,7 +283,28 @@ footer .back{display:inline-block;margin-top:26px;color:var(--accent);font-weigh
 }
 
 /* 抖动（由 JS 随机施加 transform） */
-.twitch{will-change:transform}
+/* 抖动通过 CSS 变量叠加，不直接覆盖元素原有 transform（保护 hover 等效果） */
+.twitch{
+  --tw-x:0px; --tw-y:0px; --tw-sk:0deg;
+  transform:translate(var(--tw-x),var(--tw-y)) skewX(var(--tw-sk));
+  will-change:transform;
+}
+
+/* 事实注脚：说明简化假设，避免把示意当成普遍规则 */
+.fact-note{
+  margin-top:26px;font-size:14px;color:var(--muted);line-height:1.7;
+  max-width:620px;margin-left:auto;margin-right:auto;opacity:.85;
+}
+
+/* 主图图例：标明模拟数据与事件标记 */
+.chart-legend{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-top:14px;font-size:13px;color:var(--muted);
+}
+.chart-legend .lg-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.chart-legend .lg-dot.up{background:#4ADE80}
+.chart-legend .lg-dot.crash{background:#EF4444}
+.chart-legend .lg-note{margin-left:auto;font-style:italic;opacity:.8}
 
 /* 回顶后的惊悚模式：轻微噪点底纹常驻 */
 body.horror-mode::after{
@@ -383,6 +406,8 @@ html[data-theme="dark"] .toast{background:#1e293b;color:#e2e8f0}
 html[data-theme="dark"] .mini-chart{background:linear-gradient(180deg,#0f172a,#1e293b)}
 html[data-theme="dark"] .app-row .accent{color:#7dd3fc}
 html[data-theme="dark"] .app-row .ok{color:#86efac}
+html[data-theme="dark"] .app-row .warn{color:#fbbf24}
+html[data-theme="dark"] .app-row .bad{color:#f87171}
 
 /* 无障碍：减少动态效果 */
 @media (prefers-reduced-motion:reduce){
