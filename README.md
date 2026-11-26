@@ -15,7 +15,8 @@
 
 ```
 fx-kurumi-trap/
-├── public/                    # 前端（原版 Hearthly 是单文件，这里做了模块化）
+├── docs/                      # 前端（原版 Hearthly 是单文件，这里做了模块化）
+│                              # 用 docs 而非 public：GitHub Pages 从分支发布仅支持 / 或 /docs
 │   ├── index.html             14 个 section 的叙事结构 + 全部文案
 │   ├── style.css              CSS 变量驱动的视觉系统
 │   └── app.js                 滚动引擎 / 后端联动 / 特效 / 音效
@@ -49,7 +50,7 @@ npm start
 
 ### 方式二：仅看前端（无后端，静默降级）
 
-直接双击 `public/index.html`。页面视觉与交互全部正常，只是：
+直接双击 `docs/index.html`。页面视觉与交互全部正常，只是：
 - 顶部不显示"你是第 N 位访客"
 - 结尾统计显示为 `—`
 
@@ -60,7 +61,7 @@ npm start
 cd backend && npm run dev
 
 # 终端 2：前端静态服务（端口 5173）
-cd public && npx serve -l 5173
+cd docs && npx serve -l 5173
 
 # 此时需把 app.js 中的 API_BASE 改为 'http://localhost:3001'
 ```
@@ -184,7 +185,7 @@ git push -u origin main
 
 仓库页面 → **Settings** → 左侧 **Pages** → **Build and deployment**：
 - Source 选 **Deploy from a branch**
-- Branch 选 `main`，目录选 `/public`
+- Branch 选 `main`，目录选 **`/docs`**
 - 保存后等待约 1 分钟，访问 `https://<你的用户名>.github.io/kurumi-fx-warning/`
 
 **注意**：GitHub Pages 只能托管静态文件，无法运行 Node.js 后端。开启 Pages 后：
@@ -201,7 +202,7 @@ git push -u origin main
 | **Railway** | 部署快，体验好 | 有免费额度 |
 | **Fly.io** | 性能较好 | 有免费额度 |
 
-部署后把 `public/app.js` 第 38 行的 `API_BASE` 改为后端地址，并在 `backend/server.js` 的 CORS 白名单中加入 GitHub Pages 域名。
+部署后把 `docs/app.js` 第 38 行的 `API_BASE` 改为后端地址，并在 `backend/server.js` 的 CORS 白名单中加入 GitHub Pages 域名。
 
 ---
 

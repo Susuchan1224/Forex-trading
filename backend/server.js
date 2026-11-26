@@ -65,8 +65,8 @@ app.use('/api', apiRoutes);
 /* ---------- 静态文件托管 ---------- */
 
 // 生产环境：后端同时服务前端构建产物
-// 前端文件位于项目根目录的 public/ 下
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// 前端文件位于项目根目录的 docs/ 下（GitHub Pages 仅支持 / 或 /docs 作为发布源）
+const PUBLIC_DIR = path.join(__dirname, '..', 'docs');
 app.use(express.static(PUBLIC_DIR));
 
 // SPA fallback：任何未匹配的 GET 请求返回 index.html
