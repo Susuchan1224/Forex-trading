@@ -678,6 +678,9 @@ function goBackToTop() {
     applyHorrorCopy();
     bustAccount();
   }
+  // 清除可能在底部触发过的低语，避免回顶后与顶部文案重叠
+  const w = $('#whisper');
+  if (w) { w.classList.remove('on'); clearTimeout(idleTimer); }
   // 先滚回顶部（平滑），噪点在 frame 中因 horrorRevealed 保留
   scrollTo({ top: 0, behavior: 'smooth' });
   toast('你回来了。可有些东西，已经回不去了。');
