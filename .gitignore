@@ -1,0 +1,14 @@
+# 依赖
+node_modules/
+
+# 运行时数据（部署后由后端自动创建）
+backend/data/sessions.json
+
+# 本地截屏与调试脚本
+preview-*.png
+scrollshot.js
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.log

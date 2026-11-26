@@ -1,0 +1,18 @@
+{
+  "name": "kurumi-fx-warning-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "《FX战士久留美》同人劝导网页 - 后端服务。记录访客行为并将统计反馈到前端叙事中。",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
