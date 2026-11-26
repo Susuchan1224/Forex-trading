@@ -38,6 +38,42 @@ function detectLang() {
 }
 let LANG = detectLang();
 
+/* ---------- 主题转换：保持色相，按角色反转明度 ---------- */
+const THEME_KEY = 'kurumi-theme';
+let darkMode = (() => {
+  try { return localStorage.getItem(THEME_KEY) === 'dark'; } catch (e) { return false; }
+})();
+
+const rgb2hsl = (r, g, b) => {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > .5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - b) / d + 4) / 6;
+  }
+  return [h, s, l];
+};
+const hsl2hex = (h, s, l) => {
+  const f = n => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+};
+/** 按主题转换颜色：bg 转暗、fg 转亮、ac 提亮但保持色相 */
+function themeColor(hex, role) {
+  if (!darkMode) return hex;
+  const [h, s, l] = rgb2hsl(...hex.slice(1).match(/../g).map(x => parseInt(x, 16)));
+  if (role === 'bg') return hsl2hex(h, Math.min(s, .38), .07 + (1 - l) * .06);
+  if (role === 'fg') return hsl2hex(h, Math.min(s, .18), .86 + l * .08);
+  return hsl2hex(h, Math.min(Math.max(s, .45), .8), .58 + l * .12);
+}
+
 /** 取文案。当前语言缺失时回退到中文，最后回退到 key 本身。 */
 function t(key) {
   return I18N[LANG]?.[key] ?? I18N.zh[key] ?? key;
@@ -98,14 +134,9 @@ async function initSession() {
     sessionId = data.sessionId;
     visitNumber = data.visitNumber;
     backendOK = true;
-    const note = $('#visitorNote');
-    if (note) {
-      note.textContent = `你是第 ${visitNumber.toLocaleString('zh-CN')} 位访客 · 仅记录匿名浏览行为`;
-    }
+    // 访客序号仅用于后端统计，不在页面上展示（避免破坏沉浸感）
   } catch (e) {
-    // 直接双击 index.html 打开时无后端：静默降级
-    const note = $('#visitorNote');
-    if (note) note.textContent = '匿名浏览模式 · 本地预览';
+    // 直接双击 index.html 打开时无后端：静默降级，不在页面提示
   }
 }
 
@@ -195,16 +226,16 @@ function frame() {
 
   // 在相邻 section 之间插值配色与 dread 值
   const p = clamp((((mid - s.offsetTop) / s.offsetHeight) - .55) / .45);
-  root.style.setProperty('--bg', mix(s.dataset.bg, n.dataset.bg, p));
-  root.style.setProperty('--fg', mix(s.dataset.fg, n.dataset.fg, p));
-  root.style.setProperty('--accent', mix(s.dataset.ac, n.dataset.ac, p));
+  root.style.setProperty('--bg', themeColor(mix(s.dataset.bg, n.dataset.bg, p), 'bg'));
+  root.style.setProperty('--fg', themeColor(mix(s.dataset.fg, n.dataset.fg, p), 'fg'));
+  root.style.setProperty('--accent', themeColor(mix(s.dataset.ac, n.dataset.ac, p), 'ac'));
   D = +s.dataset.d + (+n.dataset.d - +s.dataset.d) * p;
   root.style.setProperty('--d', D.toFixed(3));
 
-  // 覆盖层强度随 D 增长
-  noiseEl.style.opacity = clamp((D - .40) * .5, 0, .28);
-  vig.style.opacity = clamp((D - .30) * 1.3);
-  scan.style.opacity = clamp((D - .70) * 1.5, 0, .5);
+  // 覆盖层强度随 D 增长：噪点在中段冷灰区提前出现，红色段才达到最强
+  noiseEl.style.opacity = clamp((D - .32) * .42, 0, .24);
+  vig.style.opacity = clamp((D - .45) * 1.0);
+  scan.style.opacity = clamp((D - .68) * 1.2, 0, .45);
 
   // 标题随恐惧深度变化
   const titles = [
@@ -227,11 +258,17 @@ function frame() {
     track('section_enter', id);
   }
 
-  // 到达结尾：加载真实统计
+  // 到达结尾：加载真实统计 + 记录已读到真相
   if (D > .96 && !statsLoaded) {
     statsLoaded = true;
     loadStats();
   }
+  markWitnessedBottom();
+  syncScrollBtn();
+
+  // 账户看板：动态数据 + 回到顶部的爆仓翻转
+  const scrollProgress = scrollY / (document.documentElement.scrollHeight - innerHeight || 1);
+  updateAccountBoard(scrollProgress);
 
   updateAudio();
 }
@@ -342,16 +379,70 @@ function drawChart() {
     </svg>`;
 }
 
-/* 4.5 顶部 App 迷你 K 线 */
+/* 4.5 顶部 App 迷你 K 线（动态：随账户状态改变走势） */
+let miniTrend = 1;   // 1=上涨盈利，-1=爆仓下跌
 function drawMiniChart() {
   const box = $('#heroChart');
   if (!box) return;
   const W = 300, H = 80;
   let p = 40;
   const pts = [];
-  for (let i = 0; i < 30; i++) { p += (Math.random() - .35) * 5; pts.push(Math.max(6, Math.min(H - 6, p))); }
+  // 上涨阶段：随机漫步偏上行；爆仓阶段：断崖式下跌
+  for (let i = 0; i < 30; i++) {
+    if (miniTrend < 0 && i > 10) p -= 4 + Math.random() * 3;
+    else p += (Math.random() - .35) * 5;
+    pts.push(Math.max(6, Math.min(H - 6, p)));
+  }
   const coords = pts.map((v, i) => `${(i / 29 * W).toFixed(1)},${v.toFixed(1)}`).join(' ');
-  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${coords}" fill="none" stroke="#2563EB" stroke-width="2"/></svg>`;
+  const color = miniTrend < 0 ? '#DC2626' : '#2563EB';
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
+}
+
+/* 4.5b 账户看板：动态模拟 + 回到顶部的爆仓翻转 */
+let accountState = 'profit';   // 'profit' | 'bust'
+let witnessedBottom = false;   // 是否滚到底部读过真相
+let balanceBase = 300000;
+
+function updateAccountBoard(progress) {
+  const balanceEl = $('#heroBalance');
+  const pnlEl = $('#heroToday');
+  const pnlBox = $('#heroTodayBox');
+  const marginEl = $('#heroMargin');
+  const posEl = $('#heroPosition');
+  if (!balanceEl || !pnlEl) return;
+
+  // 从底部回到顶部：叙事翻转——账户爆仓
+  if (witnessedBottom && progress < .03) {
+    if (accountState !== 'bust') {
+      accountState = 'bust';
+      miniTrend = -1;
+      drawMiniChart();
+      track('account_bust_after_return');
+      balanceEl.style.color = '#DC2626';
+      pnlBox.className = 'pnl down';
+      pnlEl.textContent = '-¥300,000';
+      if (marginEl) { marginEl.textContent = '强制平仓'; marginEl.className = 'bad'; }
+      if (posEl) posEl.textContent = '已清空';
+      animateNumber(balanceEl, balanceBase, 0, 1400, '¥');
+    }
+    return;
+  }
+
+  // 正常状态：数值随滚动小幅波动（模拟实时行情）
+  if (accountState === 'profit') {
+    const drift = Math.round(Math.sin(progress * 30) * 3800 + (Math.random() - .5) * 900);
+    const pnl = 12450 + drift;
+    balanceEl.textContent = '¥' + (balanceBase + pnl).toLocaleString('zh-CN');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '-') + '¥' + Math.abs(pnl).toLocaleString('zh-CN');
+    // 定时重绘迷你 K 线（节流由 setInterval 控制）
+  }
+}
+
+// 记录是否已读到真相（D>0.95 视为读完）
+function markWitnessedBottom() {
+  if (D > .95 && !witnessedBottom) {
+    witnessedBottom = true;
+  }
 }
 
 /* 4.6 数字滚动动画 */
@@ -382,6 +473,45 @@ $('#abstainBtn')?.addEventListener('click', e => {
 /* 4.8 音效开关 */
 $('#sound')?.addEventListener('click', () => audio ? stopAudio() : startAudio());
 $('#heroSound')?.addEventListener('click', () => { startAudio(); track('sound_on'); });
+
+/* 4.8b 右下滚动按钮：跳到下一节，底部隐藏 */
+const scrollBtn = $('#scrollNext');
+scrollBtn?.addEventListener('click', () => {
+  // 找出下一个 section 的顶部
+  const all = [...document.querySelectorAll('section[id], section.sec')];
+  const y = scrollY + innerHeight * .4;
+  const next = all.find(s => s.offsetTop > y);
+  if (next) {
+    scrollTo({ top: next.offsetTop - 50, behavior: 'smooth' });
+    track('scroll_next_btn');
+  } else {
+    scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  }
+});
+// 在 frame 中同步按钮显隐（通过全局函数）
+function syncScrollBtn() {
+  if (!scrollBtn) return;
+  const atBottom = scrollY + innerHeight >= document.documentElement.scrollHeight - 120;
+  scrollBtn.classList.toggle('hidden', atBottom);
+}
+
+/* 4.9 昼夜模式切换 */
+function syncThemeBtn() {
+  const btn = $('#theme');
+  if (!btn) return;
+  btn.textContent = darkMode ? '☀ 日间' : '☾ 夜间';
+  btn.classList.toggle('on', darkMode);
+  btn.setAttribute('aria-label', darkMode ? '切换到日间模式' : '切换到夜间模式');
+  document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+}
+$('#theme')?.addEventListener('click', () => {
+  darkMode = !darkMode;
+  try { localStorage.setItem(THEME_KEY, darkMode ? 'dark' : 'light'); } catch (e) {}
+  syncThemeBtn();
+  frame();
+  track('theme_switch', darkMode ? 'dark' : 'light');
+});
+syncThemeBtn();
 
 /* ---------------- 5. WEB AUDIO ---------------- */
 
@@ -483,9 +613,26 @@ setInterval(() => {
   }
 }, 850);
 
+/* ---------------- 5.5 滚动进入动画 ---------------- */
+function initReveal() {
+  const targets = $$('.card, .thought, .quote, .step, .fact, .chip, .voices blockquote, .official-warning');
+  if (!targets.length) return;
+  targets.forEach(el => el.classList.add('reveal'));
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        setTimeout(() => e.target.classList.add('in'), (i % 4) * 90);
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: .14, rootMargin: '0px 0px -40px 0px' });
+  targets.forEach(el => io.observe(el));
+}
+
 /* ---------------- 6. 启动 ---------------- */
 
 (function boot() {
+  initReveal();
   drawChart();
   drawMiniChart();
   applyStatic();
@@ -495,6 +642,11 @@ setInterval(() => {
 
   // 定期上报队列（防止用户停留时队列积压）
   setInterval(flush, 4000);
+
+  // 账户迷你 K 线每 1.2 秒刷新，模拟实时行情
+  setInterval(() => {
+    if (scrollY < innerHeight * 1.5 && accountState === 'profit') drawMiniChart();
+  }, 1200);
 
   // 调试/分享：URL 加 ?at=0.5 可跳转到指定滚动进度（0~1）
   // 用途：快速定位到某个叙事阶段截图、分享特定章节给朋友

@@ -13,12 +13,26 @@
 <body>
 
 <!-- ========== 全局覆盖层（视觉异化） ========== -->
+<!-- 右侧装饰：刻度边框 + 竖排标签 + 滚动按钮（参考官网设计） -->
+<div class="frame-rail" aria-hidden="true">
+  <div class="frame-rail__ticks"></div>
+  <div class="frame-rail__tag"><span>KURUMI FX</span><span class="tag-dot">✕</span></div>
+</div>
+<button id="scrollNext" type="button" class="scroll-next" aria-label="滚动到下一节">
+  <svg class="scroll-next__ring" viewBox="0 0 100 100" aria-hidden="true">
+    <defs><path id="ringPath" d="M50,50 m-36,0 a36,36 0 1,1 72,0 a36,36 0 1,1 -72,0"/></defs>
+    <text><textPath href="#ringPath" startOffset="0%">SCROLL DOWN · SCROLL DOWN · </textPath></text>
+  </svg>
+  <span class="scroll-next__arrow">↓</span>
+</button>
+
 <canvas id="noise" width="320" height="180"></canvas>
 <div id="vig"></div>
 <div id="scan"></div>
 <div id="whisper"></div>
 <div id="toast"></div>
 <button id="sound" type="button" data-i18n="sound.off">♪ 氛围音效：关</button>
+<button id="theme" type="button" aria-label="切换昼夜模式">☾ 夜间</button>
 
 <!-- ========== 导航 ========== -->
 <nav class="nav">
@@ -53,19 +67,18 @@
         <a href="#success" class="btn ghost" data-i18n="hero.cta2">看看学员故事</a>
       </div>
       <p class="tiny"><span data-i18n="hero.tiny1">模拟交易零风险 · 真实收益不保证</span><button type="button" id="heroSound" data-i18n="hero.sound">开启氛围音效</button></p>
-      <p class="visitor-note" id="visitorNote" data-i18n="hero.visitor">正在连接...</p>
     </div>
 
     <!-- 模拟交易 App 界面 -->
     <div class="device" aria-label="模拟交易界面">
       <div class="phone-mock">
         <div class="app-head"><span data-i18n="app.title">我的账户</span><span class="dot">●</span></div>
-        <div class="balance"><small data-i18n="app.balance">账户余额</small><strong data-i18n="app.amount">¥300,000</strong></div>
-        <div class="pnl up"><span data-i18n="app.today">今日盈亏</span><strong id="heroToday">+¥12,450</strong></div>
+        <div class="balance"><small data-i18n="app.balance">账户余额</small><strong id="heroBalance">¥300,000</strong></div>
+        <div class="pnl up" id="heroTodayBox"><span data-i18n="app.today">今日盈亏</span><strong id="heroToday">+¥12,450</strong></div>
         <div class="mini-chart" id="heroChart" aria-hidden="true"></div>
-        <div class="app-row"><span data-i18n="app.position">当前持仓</span><b>USD/JPY ×50</b></div>
+        <div class="app-row"><span data-i18n="app.position">当前持仓</span><b id="heroPosition">USD/JPY ×50</b></div>
         <div class="app-row"><span data-i18n="app.leverage">杠杆</span><b class="accent">50×</b></div>
-        <div class="app-row"><span data-i18n="app.margin">保证金率</span><b class="ok">充足</b></div>
+        <div class="app-row"><span data-i18n="app.margin">保证金率</span><b class="ok" id="heroMargin">充足</b></div>
       </div>
     </div>
   </div>
@@ -76,7 +89,7 @@
 </section>
 
 <!-- ========== 02 FEATURES · d=0.04 ========== -->
-<section id="features" class="sec" data-bg="#F1F5F9" data-fg="#0F172A" data-ac="#2563EB" data-d="0.04">
+<section id="features" class="sec" data-bg="#F4F8FD" data-fg="#0F172A" data-ac="#2563EB" data-d="0.04">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="features.kicker">为什么选择 Kurumi</div>
@@ -104,7 +117,7 @@
 </section>
 
 <!-- ========== 03 LEVERAGE · d=0.1 ========== -->
-<section class="sec" data-bg="#E8F0FE" data-fg="#0F172A" data-ac="#1D4ED8" data-d="0.1">
+<section class="sec" data-bg="#EDF4FC" data-fg="#0F172A" data-ac="#1D4ED8" data-d="0.1">
   <div class="wrap split">
     <div>
       <div class="kicker" data-i18n="lev.kicker">杠杆的力量</div>
@@ -122,7 +135,7 @@
 </section>
 
 <!-- ========== 04 TOOLS · d=0.16 ========== -->
-<section class="sec" data-bg="#DBEAFE" data-fg="#0F172A" data-ac="#1E40AF" data-d="0.16">
+<section class="sec" data-bg="#E6F0FB" data-fg="#0F172A" data-ac="#1E40AF" data-d="0.16">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tools.kicker">专业工具</div>
@@ -139,7 +152,7 @@
 </section>
 
 <!-- ========== 05 SUCCESS · d=0.24 ========== -->
-<section id="success" class="sec" data-bg="#DCEBF7" data-fg="#0F172A" data-ac="#16A34A" data-d="0.24">
+<section id="success" class="sec" data-bg="#DFEAF7" data-fg="#0F172A" data-ac="#2563EB" data-d="0.24">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="success.kicker">学员故事</div>
@@ -166,7 +179,7 @@
 </section>
 
 <!-- ========== 06 TIPS · d=0.32 ========== -->
-<section class="sec" data-bg="#FEF3C7" data-fg="#1C1917" data-ac="#D97706" data-d="0.32">
+<section class="sec" data-bg="#D8E5F4" data-fg="#16213A" data-ac="#3B6FD4" data-d="0.32">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tips.kicker">进阶课程</div>
@@ -182,7 +195,7 @@
 </section>
 
 <!-- ========== 07 MINDSET · d=0.40 ========== -->
-<section class="sec" data-bg="#FDE68A" data-fg="#1C1917" data-ac="#EA580C" data-d="0.40">
+<section class="sec" data-bg="#CFDCEC" data-fg="#16213A" data-ac="#4A6FA8" data-d="0.40">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="mindset.kicker">真实交易者心态</div>
@@ -198,7 +211,7 @@
 </section>
 
 <!-- ========== 08 CHART · d=0.48 ========== -->
-<section class="sec" data-bg="#FECACA" data-fg="#1C1917" data-ac="#DC2626" data-d="0.48">
+<section class="sec" data-bg="#C2D0E2" data-fg="#1A2436" data-ac="#5A6B8A" data-d="0.48">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="chart.kicker">行情回顾</div>
@@ -214,7 +227,7 @@
 </section>
 
 <!-- ========== 09 REALITY · d=0.56 ========== -->
-<section class="sec" data-bg="#FCA5A5" data-fg="#1C1917" data-ac="#B91C1C" data-d="0.56">
+<section class="sec" data-bg="#AFBDCE" data-fg="#1A2436" data-ac="#6B5A7A" data-d="0.56">
   <div class="wrap split">
     <div>
       <div class="kicker" data-i18n="reality.kicker">强平通知</div>
@@ -235,7 +248,7 @@
 </section>
 
 <!-- ========== 10 VOICES · d=0.64 ========== -->
-<section class="sec" data-bg="#7F1D1D" data-fg="#FEE2E2" data-ac="#EF4444" data-d="0.64">
+<section class="sec" data-bg="#7A3A4A" data-fg="#F5E9EC" data-ac="#C85068" data-d="0.64">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="voices.kicker">交易者心声</div>
@@ -251,7 +264,7 @@
 </section>
 
 <!-- ========== 11 KURUMI · d=0.72 ========== -->
-<section class="sec kurumi-stage" data-bg="#450A0A" data-fg="#FEE2E2" data-ac="#DC2626" data-d="0.72">
+<section class="sec kurumi-stage" data-bg="#4A1E2A" data-fg="#F5E9EC" data-ac="#C23A54" data-d="0.72">
   <div class="wrap center">
     <div class="kicker" data-i18n="kurumi.kicker">久留美说的话</div>
     <p class="kurumi-quote glitch" data-text="老实赚钱，很枯燥吧？" data-i18n="kurumi.quote">老实赚钱，很枯燥吧？</p>
@@ -267,7 +280,7 @@
 </section>
 
 <!-- ========== 12 WARNING · d=0.80 ========== -->
-<section class="sec" data-bg="#1C1917" data-fg="#F5F5F4" data-ac="#B91C1C" data-d="0.80">
+<section class="sec" data-bg="#241C24" data-fg="#EFE6EC" data-ac="#A83852" data-d="0.80">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="warning.kicker">动画开播前的警告</div>
@@ -283,7 +296,7 @@
 </section>
 
 <!-- ========== 13 TRUTH · d=0.88 ========== -->
-<section class="sec" data-bg="#0C0A09" data-fg="#E7E5E4" data-ac="#991B1B" data-d="0.88">
+<section class="sec" data-bg="#141018" data-fg="#E8E2EC" data-ac="#8A3A5A" data-d="0.88">
   <div class="wrap center">
     <div class="kicker" data-i18n="truth.kicker">真相</div>
     <h2 class="truth-title" data-i18n-html="truth.h2">这不是投资。<br>这是赌博。</h2>
