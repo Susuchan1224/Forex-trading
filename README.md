@@ -181,28 +181,35 @@ git push -u origin main
 | `failed to push some refs` | 远端有本地没有的提交 | 先 `git pull origin main --allow-unrelated-histories`，再 push |
 | 认证失败 | 凭证未配置 | 确认 Credential Manager 弹窗已完成浏览器授权 |
 
-### 第四步（可选）：开启 GitHub Pages 展示前端
+### 完整版（访客统计生效的正式链接）
 
-仓库页面 → **Settings** → 左侧 **Pages** → **Build and deployment**：
-- Source 选 **Deploy from a branch**
-- Branch 选 `main`，目录选 **`/docs`**
-- 保存后等待约 1 分钟，访问 `https://<你的用户名>.github.io/kurumi-fx-warning/`
+项目已整体发布为 Node HTTP 服务，前后端同源：
 
-**注意**：GitHub Pages 只能托管静态文件，无法运行 Node.js 后端。开启 Pages 后：
-- 页面视觉与交互全部正常
-- 但顶部"第 N 位访客"和结尾统计会显示 `—`（前端静默降级）
+```
+https://kurumi-fx-warning.app.workbuddy.host/?sharecode=YADFDQSGKP
+```
 
-### 后端部署建议（可选）
+**分享时必须带完整链接（含 `?sharecode=...`）**，否则发布网关会拦截 API 请求。
 
-如需完整的前后端联动，把 `backend/` 部署到免费 PaaS：
+该链接上，访客统计全部生效：
+- 顶部显示"你是第 N 位访客"
+- 结尾显示真实累计数据（读到这里的人数、决定远离 FX 的人数、平均停留时长）
+- 滚动深度、section 进入、点击按钮等行为被匿名记录
 
-| 平台 | 特点 | 免费额度 |
-|------|------|---------|
-| **Render** | 配置最简单，支持 Node.js | 有免费层（会休眠） |
-| **Railway** | 部署快，体验好 | 有免费额度 |
-| **Fly.io** | 性能较好 | 有免费额度 |
+### GitHub Pages（静态展示版）
 
-部署后把 `docs/app.js` 第 38 行的 `API_BASE` 改为后端地址，并在 `backend/server.js` 的 CORS 白名单中加入 GitHub Pages 域名。
+仓库页面 → **Settings** → **Pages** → **Build and deployment**：
+- Source 选 **Deploy from a branch**，Branch 选 `main`，目录选 **`/docs`**
+- 访问 `https://susuchan1224.github.io/Forex-trading/`
+
+**注意**：GitHub Pages 只托管静态文件，无法运行后端。此版本中所有统计显示 `—`，属正常降级，不是故障。需要统计时用上面的完整版链接。
+
+### 发布架构说明
+
+- 根目录 `package.json` 是部署入口：`npm start` → `node backend/server.js`
+- 后端同时托管 `docs/` 前端与 `/api/*` 接口，同源部署，无需 CORS 跨域配置
+- `docs/app.js` 中的 `apiURL()` 会自动从当前地址提取 `sharecode` 并附加到每个 API 请求——这是适配发布网关的关键；本地运行时该值为空，不影响开发
+- 数据存于 `backend/data/sessions.json`，只记录匿名行为，不含身份信息
 
 ---
 
