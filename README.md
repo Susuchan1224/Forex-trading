@@ -151,14 +151,73 @@ setLang('en')
 
 ---
 
-## 部署到 GitHub
+## 部署到 GitHub（新手完整步骤）
 
-> 待补充：需提供你的 GitHub 用户名和仓库名。
+### 第一步：在 GitHub 网页上创建仓库
 
-推荐方案（前后端一起部署）：
-- **前端**：GitHub Pages（免费，但只能托管静态文件）
-- **后端**：Render / Railway / Fly.io（免费额度足够学习项目）
-- 前端 `API_BASE` 改为后端地址，后端 CORS 白名单加入 GitHub Pages 域名
+1. 打开 <https://github.com/new>，登录你的账号
+2. **Repository name** 填：`kurumi-fx-warning`（或你喜欢的名字）
+3. **Description**（可选）填：`《FX战士久留美》同人反FX赌博劝导网页`
+4. 选择 **Public**（公开，GitHub Pages 需要）
+5. **重要**：下方三个初始化选项**全部不要勾选**
+   - ☐ Add a README file
+   - ☐ Add .gitignore
+   - ☐ Choose a license
+   （本地项目已包含这些文件，勾选会导致冲突）
+6. 点击 **Create repository**
+
+### 第二步：获取仓库地址
+
+创建成功后，页面会显示 **Quick setup** 区域。确认选中的是 **HTTPS** 标签页（不是 SSH），复制类似下面的地址：
+
+```
+https://github.com/<你的用户名>/kurumi-fx-warning.git
+```
+
+### 第三步：在本地推送
+
+在终端执行（把 `<你的用户名>` 换成实际用户名）：
+
+```bash
+# 进入项目目录
+cd "D:/apps/tools/workbuddy cache/2026-11-26-13-32-48/fx-kurumi-trap"
+
+# 关联远程仓库
+git remote add origin https://github.com/<你的用户名>/kurumi-fx-warning.git
+
+# 推送（首次推送需要 -u 参数）
+git push -u origin main
+```
+
+首次 push 时，Windows 会弹出 **Git Credential Manager** 登录窗口：
+- 选择 **Sign in with your browser**
+- 在浏览器中完成 GitHub 登录/授权
+- 授权后终端会显示推送成功
+
+如果分支名提示不是 `main`，先执行 `git branch -M main` 再推送。
+
+### 第四步（可选）：开启 GitHub Pages 展示前端
+
+仓库页面 → **Settings** → 左侧 **Pages** → **Build and deployment**：
+- Source 选 **Deploy from a branch**
+- Branch 选 `main`，目录选 `/public`
+- 保存后等待约 1 分钟，访问 `https://<你的用户名>.github.io/kurumi-fx-warning/`
+
+**注意**：GitHub Pages 只能托管静态文件，无法运行 Node.js 后端。开启 Pages 后：
+- 页面视觉与交互全部正常
+- 但顶部"第 N 位访客"和结尾统计会显示 `—`（前端静默降级）
+
+### 后端部署建议（可选）
+
+如需完整的前后端联动，把 `backend/` 部署到免费 PaaS：
+
+| 平台 | 特点 | 免费额度 |
+|------|------|---------|
+| **Render** | 配置最简单，支持 Node.js | 有免费层（会休眠） |
+| **Railway** | 部署快，体验好 | 有免费额度 |
+| **Fly.io** | 性能较好 | 有免费额度 |
+
+部署后把 `public/app.js` 第 38 行的 `API_BASE` 改为后端地址，并在 `backend/server.js` 的 CORS 白名单中加入 GitHub Pages 域名。
 
 ---
 
