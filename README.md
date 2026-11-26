@@ -5,9 +5,148 @@
 
 ## 一句话概述
 
-一个"渐进式异化"的交互网页：表面是专业的 FX 交易教学平台，随着用户向下滚动，页面逐渐暴露赌徒心理陷阱、强平爆仓的真实后果，最后以动画台词和真实访客统计收尾——劝导读者远离 FX 赌博。
+一个「渐进式异化」的交互网页：表面是专业的 FX 交易教学平台，随着向下滚动，
+逐渐暴露赌徒心理陷阱与强平爆仓的真实后果，最后用读者自己的行为数据收尾。
 
-技术内核复刻自 [Hearthly](https://github.com/jikol1906/Hearthly)（Claude 生成的滚动恐怖网页），但叙事主题、视觉设计和后端联动均为原创。
+技术内核参考 [Hearthly](https://github.com/jikol1906/Hearthly)，叙事主题、视觉设计、
+颜料转场与后端联动为原创。
+
+---
+
+## 叙事结构（v3）
+
+重排过一次。原来「久留美的身世」放在爆仓之后，读者刚看完账户归零，页面忽然开始
+介绍主角的家庭背景——那是在最紧的地方插入了一段维基百科。
+
+现在她提前到第 06 屏，作为**课程的讲师**出场。三个数字并排放着（20 岁 / 8 个月 /
++640 万），页面不解释，读者自己会算。等后面账户爆掉时，倒下的已经不是陌生人。
+
+| # | 段落 | d | 作用 |
+|---|------|---|------|
+| 01 | 课程首页 | 0 | 账户 +12,450，一切正常 |
+| 02 | 课程特色 | .04 | 25 倍杠杆 / 24 小时交易 |
+| 03 | 杠杆的力量 | .10 | 1 万撬动 25 万 |
+| 04 | 专业工具 | .15 | — |
+| 05 | 学员故事 | .20 | 三张五星卡，第三张是「已注销」　**彩色颜料转场** |
+| 06 | **关于讲师** | .26 | 她的身世。第一个不对劲，但不解释 |
+| 07 | 进阶课程 | .34 | 三个习惯，她全部违反 |
+| 08 | 交易者心态 | .42 | 你会怎么想 |
+| 09 | **今晚** | .50 | 五条推送，依次落下　**污色颜料转场** |
+| 10 | 行情回顾 | .58 | 蜡烛图打印 → 那根长阴线　**血色转场** |
+| 11 | **强制平仓** | .66 | 漩涡 + 立绘坠落 + 血痕往下淌 |
+| 12 | 系统日志 | .74 | 券商终端逐行输出 |
+| 13 | **你的记录** | .82 | 读者自己的真实数据 |
+| 14 | 官方警告 | .88 | 全页唯一允许明说风险的地方 |
+| 15 | 真相 | .93 | 收束 |
+| 16 | 最后的话 | 1.0 | 统计 / 决定 / 回顶 |
+
+配色轨迹：**蓝白(可信) → 冷灰(异常) → 夜蓝(失眠) → 近黑(爆仓) → 暗红(清算)**
+
+---
+
+## 核心机制
+
+### 1. 颜料转场
+
+动画里的转场是液体颜料喷在墙上：前半段五颜六色，亏钱之后变成暗红，一直往下淌。
+`app.js` 的 `splash()` 按原作 OP 的构图复刻 —— 注意原作是**黑底上的锐利颜料**，
+不是「模糊色块铺满屏幕」，第一版做错了方向：
+
+- **底色先压黑**：`veil` 是深色，alpha 0.78~0.88。用同色系亮色当底色时，
+  整屏会变成一层粉色滤镜，颜料就不跳了
+- **三层密度**：核心团块 24 块（r 30–88，叠成一整片）→ 中块 34 → 小块 54 → 颗粒 115，
+  距离按指数衰减堆在喷射源附近。均匀随机会撒成彩纸
+- **形状**：极坐标抖动的多边形 + 二次曲线过中点平滑，抖动幅度 0.42~1.6；
+  沿喷射方向拉伸，并拖一条锥形尾 —— 这是「液体」和「色块」最大的区别
+- **拖丝**：26 条贝塞尔，采样成由粗到细的锥形体，尾巴挂一颗珠子
+- **挂住**：所有元素按出生时间**永久画进离屏缓冲**，主画布每帧只做「底色 + 缓冲 + 淡出」。
+  颜料是真的留在屏幕上，而不是每帧随机闪烁
+- **下淌**：只有 `red` / `blood` 两档才淌 —— 干净与淌血本身就是对比。
+  颜色取调色板最深的一档，上宽下窄 + 垂坠的头
+
+四档调色板，同一个函数只换颜色：
+
+```js
+bright: 糖纸色，不淌      // 05 学员故事：全页最快乐的一屏
+wrong:  混进一块 #6E0C14  // 09 今晚：还是彩色，但有一个颜色不对
+red:    暗红，开始淌      // 10 K 线崩的那一下
+blood:  最暗，淌得最多    // 11 强制平仓
+```
+
+`prefers-reduced-motion` 下退化为一次 320ms 的色闪。
+
+### 2. 单一账户模型 + 单一行情源
+
+```js
+const LEVERAGE = 25;
+notional    = usedMargin × leverage        // 120,000 × 25 = 3,000,000
+pnlPerYen   = notional ÷ price             // ≈ 19,355 日元 / 每 1 日元波动
+equity      = deposit + floatingPnl
+marginLevel = equity ÷ usedMargin × 100
+```
+
+`usedMargin` 占本金 40%，是「赌徒」的仓位而不是理性仓位——叙事需要的设定。
+维持率分级：`≥200% 充足 / ≥100% 注意 / ≥50% 危险 / <50% 即将强平`。
+
+> 现实参照：日本个人 FX 杠杆上限 25 倍（2011 年 8 月起），多数业者维持率 100% 发追证、
+> 50% 强制平仓。页面按此简化，但**不能当作实际交易依据**。
+
+图表面板里的盈亏不是另一个字符串，而是「最后一根已揭示 K 线的收盘价」换算出来的。
+
+### 3. 「你的记录」
+
+全页唯一使用读者真实数据的一屏，也是唯一一处不需要编造就能让人不适的地方。
+
+| 字段 | 来源 |
+|------|------|
+| 本地时间 | `Date` |
+| 停留时长 | 进入页面至今 |
+| 往回滚 | `peakY - scrollY > 250` 的累计次数 |
+| 停留最久的一屏 | 每屏累计停留（`sectionMs`） |
+
+底部那句话是**动态挑选**的，只陈述可核对的事实：
+
+- 如果「强制平仓」那一屏停得最久 → `你在「强制平仓」那一屏停了 41 秒。比任何一屏都久。`
+- 否则如果往回滚过 → `你往回滚了 12 次。看第二遍不会改变结果。`
+- 都不是 → `你在这页已经停了 06:14。没有人催你。`
+
+后面跟一句：「以上数据只保存在你的浏览器里。**暂时。**」
+
+数据不上传，也不需要后端。这句话的说服力来自它可能是真的。
+
+### 4. 滚动引擎与「事件」
+
+`requestAnimationFrame` + `ticking` 节流，`--d` 驱动噪点、暗角、扫描线与灰化滤镜。
+灰化最大只到 `grayscale(.22)`——早期版本用 `.35`，把「我决定远离 FX」这个唯一的
+行动按钮也一起灰掉了。
+
+事件全部挂在滚动进度上，一次性事件用布尔量锁死：
+
+| 段落 | 驱动 | 实现 |
+|------|------|------|
+| 通知堆栈 | 视口进度 | 按进度重建 `#npStack`，逐条入场；最后一条落下才亮出「发送方：您的交易账户」 |
+| K 线 | `.chart-panel` 位置 | 逐根切 `opacity` + 扫描线；价格轴与时间轴用 HTML 绝对定位 |
+| 强制平仓 | 粘性进度（240vh） | 标题 `scale(1.55→1)` + `blur(12→0)`；立绘位移；末尾压黑 |
+| 系统日志 | 粘性进度（280vh） | 按进度给 `.l` 加 `.on` |
+
+**K 线为什么文字用 HTML**：SVG 用了 `preserveAspectRatio="none"`，文字放进去会被
+横向压扁（296px 宽的容器里会压到 30%）。所以 SVG 只画矩形和线。
+
+### 5. 回顶清算
+
+只改文案不够——白底蓝字里写着「它一直在等你回来」，情绪是错的。
+接近顶部时 `--bg / --fg / --accent` 会被插值压成近黑 + 血红，越往下滚恢复得越多。
+
+爆仓动画必须等用户真正看到才启动（`scrollend`），否则 300,000 → 0 的暴跌会全部
+发生在屏幕外。中间的 `#scare` 是一层全屏惊吓。
+
+### 6. Web Audio
+
+零音频文件，全部 `AudioContext` 合成：pad / drone / 心跳 / crash（低频下坠 + 噪声爆点）
+/ splash（一声上扬的唰）/ scare。
+
+音频必须由用户手势解锁，所以首屏的「开启氛围音效」是入口。没有音频时，
+所有冲击都有**视觉替代**（全屏闪、震屏），不会因为静音就没有反馈。
 
 ---
 
@@ -15,260 +154,69 @@
 
 ```
 fx-kurumi-trap/
-├── docs/                      # 前端（原版 Hearthly 是单文件，这里做了模块化）
-│                              # 用 docs 而非 public：GitHub Pages 从分支发布仅支持 / 或 /docs
-│   ├── index.html             14 个 section 的叙事结构 + 全部文案
-│   ├── style.css              CSS 变量驱动的视觉系统
-│   └── app.js                 滚动引擎 / 后端联动 / 特效 / 音效
+├── docs/
+│   ├── index.html            16 个叙事段落
+│   ├── style.css             CSS 变量驱动的视觉系统
+│   ├── app.js                滚动引擎 / 颜料转场 / 账户模型 / Web Audio
+│   └── assets/               角色立绘与背景（见下方版权说明）
 ├── backend/
-│   ├── server.js              Express 入口、中间件、静态托管
-│   ├── routes/api.js          RESTful API
-│   ├── data/sessions.json     行为数据存储（自动创建）
-│   └── package.json
+│   ├── server.js
+│   ├── routes/api.js
+│   └── data/sessions.json
 └── README.md
 ```
 
----
-
 ## 快速开始
 
-### 方式一：本地完整运行（推荐，含后端）
-
 ```bash
-# 1. 进入后端目录
-cd backend
-
-# 2. 安装依赖
-npm install
-
-# 3. 启动服务
-npm start
-
-# 4. 浏览器打开
+cd backend && npm install && npm start
 # http://localhost:3001
 ```
 
-### 方式二：仅看前端（无后端，静默降级）
+仅看前端：直接打开 `docs/index.html`。视觉、滚动叙事、颜料转场、回顶清算全部可用；
+只有结尾统计会降级为基线值。
 
-直接双击 `docs/index.html`。页面视觉、滚动叙事、昼夜切换、账户模拟、回顶惊悚翻转**全部正常**，只是：
-- 结尾的社会统计显示为 `—`（无后端可查）
-- 不产生任何网络请求堆积（队列会自动停用）
+---
 
-### 开发模式（前后端分离）
+## 版权与素材说明
+
+`docs/assets/` 中的角色图像取自 TV 动画《FX戦士くるみちゃん》官方网站
+（© でむにゃん・炭酸だいすき／「FX戦士くるみちゃん」製作委員会），
+仅用于本非商业同人页面的评论与教学引用，页脚已标注出处。
+
+字体全部使用系统栈，不请求任何外部 CDN：校园网 / 离线环境也能正常渲染，
+同时避免渲染阻塞。
+
+---
+
+## 调试
+
+- `?at=0.66` —— 直接跳到 66% 进度
+- `__kurumi.D` / `__kurumi.account` / `__kurumi.chart` / `__kurumi.stats`
+- `__kurumi.splash('blood')` —— 现场放一次转场
+- `__kurumi.resetAccount()` —— 重置到初始状态
+- `setLang('en')` —— 预留英文模式
+
+---
+
+## 部署
+
+仓库：<https://github.com/Susuchan1224/Forex-trading>
 
 ```bash
-# 终端 1：后端（端口 3001）
-cd backend && npm run dev
-
-# 终端 2：前端静态服务（端口 5173）
-cd docs && npx serve -l 5173
-
-# 此时需把 app.js 中的 API_BASE 改为 'http://localhost:3001'
-```
-
----
-
-## 核心机制解析（学习重点）
-
-### 1. 数据驱动的 section 体系
-
-每个 `<section>` 携带四个数据属性：
-
-```html
-<section data-bg="#F8FAFC" data-fg="#0F172A" data-ac="#2563EB" data-d="0">
-```
-
-- `data-bg/fg/ac`：该阶段的背景/前景/强调色
-- `data-d`：dread（恐惧）值，从 0（正常）线性递增到 1（真相）
-
-叙事配色轨迹：**蓝白(可信) → 冷灰(轻微异常) → 深红(崩坏，仅少数小节) → 近黑(真相) → 暗红(清算)**
-早期刻意保持正规教育网站的中性色，不提前暴露讽刺意图；黄色阶段已移除。
-
-### 2. 滚动引擎（app.js 的 `frame()`）
-
-```
-视口中点 → 定位当前 section → 与下一节插值 → 写入 CSS 变量
-```
-
-关键代码逻辑：
-
-```js
-const mid = scrollY + innerHeight * .5;
-let i = secs.findIndex(s => s.offsetTop + s.offsetHeight > mid);
-const s = secs[i], n = secs[Math.min(i + 1, secs.length - 1)];
-const p = clamp((((mid - s.offsetTop) / s.offsetHeight) - .55) / .45);
-
-root.style.setProperty('--bg', mix(s.dataset.bg, n.dataset.bg, p));
-root.style.setProperty('--accent', mix(s.dataset.ac, n.dataset.ac, p));
-D = +s.dataset.d + (+n.dataset.d - +s.dataset.d) * p;
-root.style.setProperty('--d', D.toFixed(3));
-```
-
-`D` 值驱动：噪点透明度、暗角、扫描线、随机抖动幅度、音效调制、标题栏文字。
-
-使用 `requestAnimationFrame` + `ticking` 标志做节流，避免滚动时主线程过载。
-
-### 3. 前后端联动（本项目相对原版的创新）
-
-| 前端行为 | API | 反馈到页面 |
-|---------|-----|-----------|
-| 页面加载 | `POST /api/session` | 建立会话（访客序号仅存后端，不在页面展示） |
-| 滚动/进入 section | `POST /api/track` | 后端记录深度，用于统计 |
-| 到达结尾 | `GET /api/stats` | 显示"共 N 人读到此处，X 人决定远离" |
-| 点击按钮 | `POST /api/track (abstain)` | 计数并更新统计 |
-| 静止 7 秒 | 本地触发 | 低语提示 + Web Audio 耳语音效 |
-
-**隐私说明**：只记录匿名行为（滚动深度、停留时间、事件类型），不收集姓名、IP、联系方式。
-
-**健壮性设计**（无后端 / 弱网 / 静态部署）：
-
-- `initSession` 失败即判定为无后端，**队列清空且不再入队**，避免内存无限增长
-- 队列硬上限 80 条，超出丢弃最旧事件；`flush` 失败时把本批放回队首，下一轮重试
-- 所有请求带 6 秒超时（`AbortSignal.timeout`），并校验 HTTP 状态与响应结构
-- 统计接口返回非法数据时显示 `—`，绝不显示 `NaN` / `undefined`
-- 因此 `file://` 直接打开或部署到纯静态托管时，页面主体完全可用
-
-### 3.1 统一账户模型（重要设计）
-
-所有展示数字由**单一状态 + 派生函数**计算，避免各处独立随机导致互相矛盾：
-
-```js
-const ACCOUNT = { deposit: 300000, floatingPnl: 12450, usedMargin: 60000, state: 'profit' };
-
-function derive() {
-  const equity      = ACCOUNT.deposit + ACCOUNT.floatingPnl;   // 净值
-  const freeMargin  = equity - ACCOUNT.usedMargin;             // 可用保证金
-  const marginLevel = equity / ACCOUNT.usedMargin * 100;       // 保证金率
-  return { equity, freeMargin, marginLevel };
-}
-```
-
-- 保证金率随亏损分档：`≥300% 充足` → `≥150% 偏低` → `≥100% 危险` → `<100% 即将强平`
-- 爆仓动画**从当前显示值起步**，不会出现数字先跳回初始值再归零
-- 爆仓后 `state = 'bust'`，行情 tick 立即停止，不再继续"盈利"
-
-> 注意：这是服务于叙事的简化模型。真实市场中的保证金比例、强平线与负余额保护规则因交易商、品种和地区而异，不能当作实际交易依据。
-
-### 3.2 统一行情源
-
-`market` 对象持有唯一价格序列，同时驱动三个看似独立的部分：
-
-| 消费者 | 数据来源 |
-|--------|---------|
-| 主图（大图） | 从 `market.entry` 出发的完整行情 + 刻度/网格/事件标记 |
-| 迷你图（账户卡片） | `market.history` 最近 30 个点 |
-| 浮动盈亏 | `(market.price - market.entry) × market.pnlPerYen` |
-
-所以「图上在跌、账户在涨」这类矛盾不会发生。主图为 USD/JPY（与持仓标的一致），并标注了模拟数据与强平触发点。
-
-### 4. Web Audio 程序化音效
-
-零音频文件依赖，全部用 `AudioContext` 合成：
-- **pad**：4 个三角波和弦，随 D 衰减
-- **drone**：3 个锯齿波低频，随 D 增强
-- **noise**：带通白噪声，D>0.55 出现
-- **心跳**：D>0.84 时每 850ms 低频敲击
-
-### 5. 预留英文模式
-
-文案通过 `data-i18n` 属性绑定。中文从 DOM 自动抽取到 `I18N.zh`，英文字典 `I18N.en` 为空。
-
-```js
-// 控制台切换（当前 en 为空，会 fallback 到中文）
-setLang('en')
-```
-
-未来填 `I18N.en` 即可支持完整英文，无需改动 HTML 和逻辑。
-
----
-
-## 调试技巧
-
-- **URL 参数 `?at=0.5`**：直接跳转到 50% 滚动位置，方便快速检查某个叙事阶段
-- **控制台 `D` 变量**：`root.style.getPropertyValue('--d')` 查看当前恐惧值
-- **API 测试**：
-  ```bash
-  curl http://localhost:3001/health
-  curl http://localhost:3001/api/stats
-  ```
-
----
-
-## 部署到 GitHub
-
-**仓库已创建**：<https://github.com/Susuchan1224/Forex-trading>
-
-### 推送命令（与当前本地状态精确匹配）
-
-本地分支当前为 `master`，GitHub 默认分支为 `main`，**必须先重命名**再推送：
-
-```bash
-cd "D:/apps/tools/workbuddy cache/2026-11-26-13-32-48/fx-kurumi-trap"
-
 git branch -M main
 git remote add origin https://github.com/Susuchan1224/Forex-trading.git
 git push -u origin main
 ```
 
-首次 push 时，Windows 会弹出 **Git Credential Manager** 登录窗口：
-- 选择 **Sign in with your browser**
-- 在浏览器中完成 GitHub 登录/授权
-- 授权后终端会显示推送成功
+GitHub Pages：Settings → Pages → `main` / `docs`（纯静态，统计降级为基线）。
 
-### 若推送失败
-
-| 报错 | 原因 | 解决 |
-|------|------|------|
-| `remote origin already exists` | 重复添加远程 | `git remote set-url origin https://github.com/Susuchan1224/Forex-trading.git` |
-| `failed to push some refs` | 远端有本地没有的提交 | 先 `git pull origin main --allow-unrelated-histories`，再 push |
-| 认证失败 | 凭证未配置 | 确认 Credential Manager 弹窗已完成浏览器授权 |
-
-### 完整版（访客统计生效的正式链接）
-
-项目已整体发布为 Node HTTP 服务，前后端同源：
-
-```
-https://kurumi-fx-warning.app.workbuddy.host/?sharecode=YADFDQSGKP
-```
-
-**分享时必须带完整链接（含 `?sharecode=...`）**，否则发布网关会拦截 API 请求。
-
-该链接上，访客统计全部生效：
-- 顶部显示"你是第 N 位访客"
-- 结尾显示真实累计数据（读到这里的人数、决定远离 FX 的人数、平均停留时长）
-- 滚动深度、section 进入、点击按钮等行为被匿名记录
-
-### GitHub Pages（静态展示版）
-
-仓库页面 → **Settings** → **Pages** → **Build and deployment**：
-- Source 选 **Deploy from a branch**，Branch 选 `main`，目录选 **`/docs`**
-- 访问 `https://susuchan1224.github.io/Forex-trading/`
-
-**注意**：GitHub Pages 只托管静态文件，无法运行后端。此版本中所有统计显示 `—`，属正常降级，不是故障。需要统计时用上面的完整版链接。
-
-### 发布架构说明
-
-- 根目录 `package.json` 是部署入口：`npm start` → `node backend/server.js`
-- 后端同时托管 `docs/` 前端与 `/api/*` 接口，同源部署，无需 CORS 跨域配置
-- `docs/app.js` 中的 `apiURL()` 会自动从当前地址提取 `sharecode` 并附加到每个 API 请求——这是适配发布网关的关键；本地运行时该值为空，不影响开发
-- 数据存于 `backend/data/sessions.json`，只记录匿名行为，不含身份信息
+数据存于 `backend/data/sessions.json`，只记录匿名行为，不收集姓名、IP、联系方式。
 
 ---
 
 ## 同人创作声明
 
-- 原作：《FX战士久留美》（FX戦士くるみちゃん），でむにゃん原作、炭酸だいすき作画，2026 年 TV 动画
+- 原作：《FX战士久留美》（FX戦士くるみちゃん），でむにゃん原作、炭酸だいすき作画
 - 本页面为非商业同人学习作品，剧情台词引用均标注来源
 - 动画本身即为警示题材，本页沿用其劝导意图，无任何投资引导
-
----
-
-## 学习建议
-
-按以下顺序阅读代码，能最快掌握"渐进式异化网页"的设计模式：
-
-1. `index.html` — 看 section 的 `data-*` 属性如何编排叙事节奏
-2. `style.css` — 理解 CSS 变量如何承接 JS 的视觉指令
-3. `app.js` 的 `frame()` — 掌握插值算法（这是整个机制的核心）
-4. `app.js` 的音效部分 — 学习 Web Audio API 的程序化合成
-5. `backend/routes/api.js` — 练习 RESTful 设计与数据持久化

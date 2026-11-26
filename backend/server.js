@@ -69,9 +69,12 @@ app.use('/api', apiRoutes);
 const PUBLIC_DIR = path.join(__dirname, '..', 'docs');
 app.use(express.static(PUBLIC_DIR));
 
-// SPA fallback：任何未匹配的 GET 请求返回 index.html
-// 注意：必须放在 API 路由之后，否则会吞掉 API 请求
+// SPA fallback：只对「不像静态资源」的 GET 请求返回 index.html
+// 注意 1：必须放在 API 路由之后，否则会吞掉 API 请求
+// 注意 2：带扩展名的请求（/favicon.ico、/x.png）应返回 404，
+//         否则缺失资源会以 text/html 200 返回，污染缓存并误导爬虫
 app.get('*', (req, res) => {
+  if (/\.[a-z0-9]+$/i.test(req.path)) return res.status(404).send('Not found');
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 

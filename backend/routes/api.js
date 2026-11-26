@@ -58,10 +58,19 @@ function writeAll(sessions) {
 
 /** 限制单次上报的事件数量，防止恶意刷数据 */
 const MAX_EVENTS = 200;
+/**
+ * 事件白名单。
+ * 早期版本漏掉了 account_bust / horror_revealed / scroll_next_btn / theme_switch
+ * 四类事件——恰恰是叙事上最关键的那几个，被静默丢弃且无任何报错。
+ * 现在补全，并且未列入的类型仍会被接收（记为 unknown），方便日后加了埋点才发现丢数据。
+ */
 const ALLOWED_EVENTS = new Set([
   'scroll', 'section_enter', 'sound_on', 'sound_off',
   'lang_switch', 'hover_forever', 'quiz_answer',
-  'abstain', 'leave', 'return', 'idle_whisper'
+  'abstain', 'leave', 'return', 'idle_whisper',
+  'account_bust', 'horror_revealed', 'scroll_next_btn', 'theme_switch',
+  'apply_click', 'chart_crash', 'chart_complete', 'losscut_title',
+  'losscut_copy', 'log_end'
 ]);
 
 /* ---------- 路由 ---------- */
@@ -118,13 +127,14 @@ router.post('/track', (req, res) => {
   }
 
   const now = Date.now();
+  // 只校验类型格式（短 slug），不按白名单丢弃——白名单漏项曾导致关键事件全丢
   const valid = events
-    .filter(e => e && ALLOWED_EVENTS.has(e.type))
+    .filter(e => e && typeof e.type === 'string' && /^[a-z_]{2,40}$/.test(e.type))
     .slice(0, MAX_EVENTS)
     .map(e => ({
       t: Number(e.t) || now,
-      type: e.type,
-      value: e.value === undefined ? null : String(e.value).slice(0, 120)
+      type: ALLOWED_EVENTS.has(e.type) ? e.type : 'unknown:' + e.type,
+      value: e.value === undefined || e.value === null ? null : String(e.value).slice(0, 120)
     }));
 
   session.events.push(...valid);
