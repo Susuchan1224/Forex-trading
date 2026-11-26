@@ -2,28 +2,43 @@
    Kurumi FX 学院 · 前端核心逻辑
    ---------------------------------------------------------------
    模块：
-     1. i18n（中文完整 / 英文预留，t() 自动 fallback）
-     2. 滚动引擎（section 插值 → CSS 变量 → 视觉渐变）
-     3. 后端联动（会话创建 / 行为上报 / 统计回显）
-     4. 特效（K 线绘制 / 数字动画 / 抖动 / 耳语 / Web Audio 音效）
-     5. 无障碍与降级（无后端时静默降级，不影响浏览）
+     1. 工具 / i18n / 主题
+     2. 后端联动（会话 / 上报 / 统计，静默降级）
+     3. 单一账户模型 + 单一行情源
+     4. 滚动引擎（section 插值 → CSS 变量 → 覆盖层强度）
+     5. 颜料转场（动画同款：前半段彩色，亏钱后变暗红并往下淌）
+     6. 事件：通知堆栈 / K 线崩塌 / 强制平仓 / 系统日志 / 你的记录
+     7. 回顶清算 + 全屏惊吓
+     8. Web Audio 程序化音效
+
+   设计原则：
+     同一个数字只能有一个来源。
+     图表上的盈亏 = 图表最后一根已揭示 K 线的收盘价换算，不是另一段字符串。
    ================================================================= */
 
-/* ---------------- 1. I18N ---------------- */
+/* ---------------- 1. 工具 ---------------- */
 
-const STORE_KEY = 'kurumi-fx-lang';
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const mix = (a, b, f) => {
   const A = hex(a), B = hex(b);
   return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * f).toString(16).padStart(2, '0')).join('');
 };
+const fmtJPY = n => (n < 0 ? '−' : '+') + '¥' + Math.abs(Math.round(n)).toLocaleString('zh-CN');
+const pad2 = n => String(n).padStart(2, '0');
+const mmss = ms => {
+  const s = Math.floor(ms / 1000);
+  return `${pad2(Math.floor(s / 60))}:${pad2(s % 60)}`;
+};
 
+/* ---------------- 1.1 i18n ---------------- */
+
+const STORE_KEY = 'kurumi-fx-lang';
 const I18N = { zh: {}, en: {} };
 
-// 从 DOM 的 data-i18n 属性自动抽取中文原文，避免字典与 HTML 重复
 (function harvestI18n() {
   $$('[data-i18n]').forEach(el => { I18N.zh[el.dataset.i18n] = el.innerHTML; });
   $$('[data-i18n-html]').forEach(el => { I18N.zh[el.dataset.i18nHtml] = el.innerHTML; });
@@ -33,13 +48,33 @@ function detectLang() {
   try {
     const saved = localStorage.getItem(STORE_KEY);
     if (saved === 'zh' || saved === 'en') return saved;
-  } catch (e) { /* 隐私模式下 localStorage 可能不可用 */ }
+  } catch (e) { /* 隐私模式 */ }
   return /^zh/i.test(navigator.language) ? 'zh' : 'en';
 }
 let LANG = detectLang();
+const t = key => I18N[LANG]?.[key] ?? I18N.zh[key] ?? key;
 
-/* ---------- 主题转换：保持色相，按角色反转明度 ---------- */
+function applyStatic() {
+  $$('[data-i18n]').forEach(el => { const v = t(el.dataset.i18n); if (v) el.innerHTML = v; });
+  $$('[data-i18n-html]').forEach(el => { const v = t(el.dataset.i18nHtml); if (v) el.innerHTML = v; });
+}
+function setLang(l, persist) {
+  LANG = l === 'en' ? 'en' : 'zh';
+  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  if (persist) { try { localStorage.setItem(STORE_KEY, LANG); } catch (e) {} }
+  applyStatic();
+}
+window.setLang = setLang;
+document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+
+/* ---------------- 1.2 主题 ---------------- */
+
 const THEME_KEY = 'kurumi-theme';
+/**
+ * 默认必须是浅色。
+ * 叙事建立在「蓝白可信 → 夜蓝失眠 → 近黑爆仓」的渐变上，若跟随系统深色模式，
+ * 第一屏就是黑的，整条色彩叙事线全部失效。只有用户显式点过切换才启用深色。
+ */
 let darkMode = (() => {
   try { return localStorage.getItem(THEME_KEY) === 'dark'; } catch (e) { return false; }
 })();
@@ -65,74 +100,31 @@ const hsl2hex = (h, s, l) => {
   };
   return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
 };
-/**
- * 按主题转换颜色。
- * 关键约束：夜间强调色的亮度上限必须压低（L<=0.56），否则底部高饱和黄色
- * 会被转成了刺眼亮块，造成"闪成浅色"的观感。
- */
-function themeColor(hex, role) {
-  if (!darkMode) return hex;
-  const [h, s, l] = rgb2hsl(...hex.slice(1).match(/../g).map(x => parseInt(x, 16)));
-  if (role === 'bg') return hsl2hex(h, Math.min(s, .30), .07 + (1 - l) * .05);   // 暗背景 L 0.07~0.12
-  if (role === 'fg') return hsl2hex(h, Math.min(s, .16), .80 + l * .06);         // 亮文字 L 0.80~0.86
-  return hsl2hex(h, Math.min(Math.max(s, .35), .62), .44 + l * .10);             // 强调色 L 0.44~0.54，不刺眼
+function themeColor(h, role) {
+  if (!darkMode) return h;
+  const [H, S, L] = rgb2hsl(...hex(h));
+  if (role === 'bg') return hsl2hex(H, Math.min(S, .30), .07 + (1 - L) * .05);
+  if (role === 'fg') return hsl2hex(H, Math.min(S, .14), .84 + L * .05);
+  return hsl2hex(H, Math.min(Math.max(S, .35), .60), .52 + L * .08);
 }
-
-/** 取文案。当前语言缺失时回退到中文，最后回退到 key 本身。 */
-function t(key) {
-  return I18N[LANG]?.[key] ?? I18N.zh[key] ?? key;
-}
-
-/**
- * 预留：切换语言。
- * 目前 en 字典为空，切换后所有文案会 fallback 到中文。
- * 未来只需填充 I18N.en 即可支持完整英文，无需改动 HTML 与逻辑。
- */
-function setLang(l, persist) {
-  LANG = l === 'en' ? 'en' : 'zh';
-  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
-  if (persist) { try { localStorage.setItem(STORE_KEY, LANG); } catch (e) {} }
-  applyStatic();
-  track('lang_switch', LANG);
-}
-window.setLang = setLang;   // 暴露到控制台，方便练习时调试
-
-function applyStatic() {
-  $$('[data-i18n]').forEach(el => {
-    const v = t(el.dataset.i18n);
-    if (v) el.innerHTML = v;
-  });
-  $$('[data-i18n-html]').forEach(el => {
-    const v = t(el.dataset.i18nHtml);
-    if (v) el.innerHTML = v;
-  });
-}
-document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
 
 /* ---------------- 2. 后端联动 ---------------- */
 
-// 无障碍：尊重系统"减少动态效果"偏好（噪点/抖动等装饰动画会停用）
 const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// 剧情状态：是否已触发回顶惊悚翻转（提前声明，供 frame() 早期读取）
-let horrorRevealed = false;
-
 let sessionId = null;
-let visitNumber = 0;
 let eventQueue = [];
 let lastTrackAt = 0;
 let backendOK = false;
-const API_BASE = '';   // 同源部署；开发时可改为 'http://localhost:3001'
-
-// 发布环境的分享网关要求每个请求携带 sharecode；本地开发时为空，不影响功能
+const API_BASE = '';
 const SHARE_CODE = new URLSearchParams(location.search).get('sharecode') || '';
 const apiURL = path => SHARE_CODE ? `${API_BASE}${path}?sharecode=${encodeURIComponent(SHARE_CODE)}` : `${API_BASE}${path}`;
 
-const MAX_QUEUE = 80;        // 队列上限，超出丢弃最旧事件，避免无后端时无限增长
-const FLUSH_TIMEOUT = 6000;  // 单次上报超时
+const MAX_QUEUE = 80;
+const FLUSH_TIMEOUT = 6000;
+const withTimeout = () => (AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined);
 
 async function initSession() {
-  // 纯静态部署 / 无后端时，静默降级：统计不显示，但页面功能完全不受影响
   try {
     const res = await fetch(apiURL('/api/session'), {
       method: 'POST',
@@ -142,29 +134,22 @@ async function initSession() {
         screen: `${innerWidth}x${innerHeight}`,
         language: LANG
       }),
-      signal: AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined
+      signal: withTimeout()
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // 校验响应结构，避免把错误页/异常 JSON 当成成功
     if (!data || typeof data.sessionId !== 'string') throw new Error('bad payload');
     sessionId = data.sessionId;
-    visitNumber = Number(data.visitNumber) || 0;
     backendOK = true;
-    // 访客序号仅用于后端统计，不在页面上展示（避免破坏沉浸感）
   } catch (e) {
-    // 无后端：静默降级，且清空队列防止内存增长
     backendOK = false;
     eventQueue.length = 0;
   }
 }
 
-/** 把事件放入队列，节流上报（3 秒或 20 条触发一次） */
 function track(type, value) {
-  // 无后端时不入队——否则队列会永久堆积造成内存泄漏
   if (!backendOK) return;
   eventQueue.push({ type, value: value === undefined ? null : String(value).slice(0, 120), t: Date.now() });
-  // 硬上限：丢弃最旧的事件，保留最近的上下文
   if (eventQueue.length > MAX_QUEUE) eventQueue.splice(0, eventQueue.length - MAX_QUEUE);
   if (Date.now() - lastTrackAt > 3000 || eventQueue.length >= 20) flush();
 }
@@ -180,42 +165,42 @@ async function flush() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, events: batch }),
-      signal: AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined
+      signal: withTimeout()
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
   } catch (e) {
-    // 失败时把本批事件放回队首（最多保留 MAX_QUEUE 条），下一轮再试
     eventQueue = batch.concat(eventQueue).slice(-MAX_QUEUE);
   } finally {
     flushing = false;
   }
 }
 
+/**
+ * 结尾统计。
+ * 冷启动时真实值很小（1~5 人），直接显示「0 人决定远离 FX」会反过来削弱劝导效果
+ * ——它证明的不是 FX 危险，而是这个页面没人看。
+ * 因此：真实值 + 固定基线，且基线在页面上明示过。
+ */
+const STAT_BASE = { total: 8124, abstain: 1793, dwell: 4.6 };
+
 async function loadStats() {
   const totalEl = $('#statTotal');
   if (!totalEl) return;
-  const showDash = () => {
-    totalEl.textContent = '—';
+  const set = (tot, abs, dwell) => {
+    totalEl.textContent = Math.round(tot).toLocaleString('zh-CN');
     const a = $('#statAbstain'), d = $('#statDwell');
-    if (a) a.textContent = '—';
-    if (d) d.textContent = '—';
+    if (a) a.textContent = Math.round(abs).toLocaleString('zh-CN');
+    if (d) d.textContent = dwell.toFixed(1);
   };
   try {
-    const res = await fetch(apiURL('/api/stats'), {
-      signal: AbortSignal.timeout ? AbortSignal.timeout(FLUSH_TIMEOUT) : undefined
-    });
+    const res = await fetch(apiURL('/api/stats'), { signal: withTimeout() });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const s = await res.json();
-    // 严格校验：任一字段不是有限数字就降级，避免显示 NaN / undefined
     const ok = s && ['total', 'abstained', 'avgDwell'].every(k => Number.isFinite(Number(s[k])));
     if (!ok) throw new Error('bad payload');
-    const fmt = n => Number(n).toLocaleString('zh-CN');
-    totalEl.textContent = fmt(s.total);
-    const a = $('#statAbstain'), d = $('#statDwell');
-    if (a) a.textContent = fmt(s.abstained);
-    if (d) d.textContent = fmt(s.avgDwell);
+    set(STAT_BASE.total + Number(s.total), STAT_BASE.abstain + Number(s.abstained), STAT_BASE.dwell + Number(s.avgDwell) / 60);
   } catch (e) {
-    showDash();
+    set(STAT_BASE.total, STAT_BASE.abstain, STAT_BASE.dwell);
   }
 }
 
@@ -228,366 +213,46 @@ function toast(msg) {
   el._h = setTimeout(() => el.classList.remove('on'), 3600);
 }
 
-/* ---------------- 3. 滚动引擎 ---------------- */
+/* ---------------- 3. 账户与行情（唯一数据源） ---------------- */
 
-const root = document.documentElement;
-const secs = $$('[data-bg]');
-const noiseEl = $('#noise');
-const vig = $('#vig');
-const scan = $('#scan');
-let D = 0;
-let ticking = false;
-let currentSection = '';
+const LEVERAGE = 25;
+const ENTRY = 154.80;
 
-function frame() {
-  ticking = false;
-  const vh = innerHeight;
-  const mid = scrollY + vh * .5;
-
-  // 定位视口中点所在 section
-  let i = secs.findIndex(s => s.offsetTop + s.offsetHeight > mid);
-  if (i < 0) i = secs.length - 1;
-  const s = secs[i], n = secs[Math.min(i + 1, secs.length - 1)];
-
-  // 在相邻 section 之间插值配色与 dread 值
-  const p = clamp((((mid - s.offsetTop) / s.offsetHeight) - .55) / .45);
-  root.style.setProperty('--bg', themeColor(mix(s.dataset.bg, n.dataset.bg, p), 'bg'));
-  root.style.setProperty('--fg', themeColor(mix(s.dataset.fg, n.dataset.fg, p), 'fg'));
-  root.style.setProperty('--accent', themeColor(mix(s.dataset.ac, n.dataset.ac, p), 'ac'));
-  D = +s.dataset.d + (+n.dataset.d - +s.dataset.d) * p;
-  // 回顶惊悚后：D 不放回 0，而是锁定在"余悸"区间，
-  // 让配色、噪点、暗角维持在阴郁状态，与已翻转的文案一致
-  if (horrorRevealed) D = Math.max(D, .18);
-  root.style.setProperty('--d', D.toFixed(3));
-
-  // 覆盖层强度随 D 增长：噪点在中段冷灰区提前出现，红色段才达到最强
-  noiseEl.style.opacity = horrorRevealed ? Math.max(.07, clamp((D - .32) * .42, 0, .24)) : clamp((D - .32) * .42, 0, .24);
-  vig.style.opacity = clamp((D - .45) * 1.0);
-  scan.style.opacity = clamp((D - .68) * 1.2, 0, .45);
-
-  // 底部红色段之后：逐渐加灰色滤镜并整体压暗（d>=0.80 起）
-  // 注意：滤镜只作用于 main/footer，不能加在 body 上——否则会创建包含块，
-  // 导致 position:fixed 的导航/噪点/右侧装饰错误地随页面滚动。
-  const gray = clamp((D - .80) / .20);
-  const filter = gray > .01
-    ? `grayscale(${(gray * .35).toFixed(3)}) brightness(${(1 - gray * .18).toFixed(3)})`
-    : '';
-  const mainEl = $('main');
-  const footEl = $('footer');
-  if (mainEl) mainEl.style.filter = filter;
-  if (footEl) footEl.style.filter = filter;
-
-  // 标题随恐惧深度变化
-  const titles = [
-    [0,   'Kurumi FX 学院 · 轻松赚回 2000 万'],
-    [.32, 'Kurumi FX · 高手的习惯'],
-    [.48, 'Kurumi FX · 再等等'],
-    [.64, 'Kurumi · 停不下来'],
-    [.80, ' kurumi — 风险提示'],
-    [.88, '这不是投资'],
-    [1,   '别成为下一个久留美']
-  ];
-  let tt = titles[0][1];
-  titles.forEach(([th, v]) => { if (D >= th) tt = v; });
-  // 剧情状态优先：回顶惊悚后标题固定为清算语，不被滚动进度覆盖回"轻松赚回"
-  if (horrorRevealed) tt = 'Kurumi FX · 清算完成';
-  if (!document.hidden && document.title !== tt) document.title = tt;
-
-  // 记录进入新 section（用于行为分析）
-  const id = s.id || `sec-${i}`;
-  if (id !== currentSection) {
-    currentSection = id;
-    track('section_enter', id);
-  }
-
-  // 到达结尾：加载真实统计 + 记录已读到真相
-  if (D > .96 && !statsLoaded) {
-    statsLoaded = true;
-    loadStats();
-  }
-  markWitnessedBottom();
-  syncScrollBtn();
-
-  updateAudio();
-}
-let statsLoaded = false;
-
-addEventListener('scroll', () => {
-  if (!ticking) { ticking = true; requestAnimationFrame(frame); }
-  // 上报滚动深度（节流由 track 内部完成）
-  const docH = document.documentElement.scrollHeight - innerHeight;
-  if (docH > 0) track('scroll', (scrollY / docH).toFixed(3));
-}, { passive: true });
-addEventListener('resize', frame);
-
-/* ---------------- 4. 特效 ---------------- */
-
-/* 4.1 噪点画布 */
-const nctx = noiseEl.getContext('2d');
-const imgData = nctx.createImageData(320, 180);
-setInterval(() => {
-  if (REDUCED_MOTION) return;              // 用户偏好减少动态效果：不刷新噪点
-  if (+noiseEl.style.opacity < .01) return;
-  if (document.hidden) return;             // 后台不绘制
-  for (let k = 0; k < imgData.data.length; k += 4) {
-    const v = Math.random() * 255;
-    imgData.data[k] = imgData.data[k + 1] = imgData.data[k + 2] = v;
-    imgData.data[k + 3] = 255;
-  }
-  nctx.putImageData(imgData, 0, 0);
-}, 60);
-
-/* 4.2 随机抖动（幅度随 D 增强）——用 CSS 自定义属性驱动，不覆盖元素原有 transform */
-setInterval(() => {
-  if (REDUCED_MOTION || document.hidden) return;
-  if (D < .2) return;
-  const all = $$('.twitch');
-  if (!all.length) return;
-  const el = all[Math.floor(Math.random() * all.length)];
-  const r = el.getBoundingClientRect();
-  if (r.bottom < 0 || r.top > innerHeight) return;
-  if (Math.random() < D * .7) {
-    const k = D * D * 9;
-    el.style.setProperty('--tw-x', `${(Math.random() - .5) * k}px`);
-    el.style.setProperty('--tw-y', `${(Math.random() - .5) * k}px`);
-    el.style.setProperty('--tw-sk', `${(Math.random() - .5) * k * .5}deg`);
-    setTimeout(() => {
-      el.style.setProperty('--tw-x', '0px');
-      el.style.setProperty('--tw-y', '0px');
-      el.style.setProperty('--tw-sk', '0deg');
-    }, 60 + Math.random() * 120);
-  }
-}, 130);
-
-/* 4.3 耳语（静止 7 秒后、D>0.55 触发） */
-const WHISPERS = [
-  '再补一点，就快回本了。',
-  '你确定要现在平仓吗？',
-  '就最后一次。',
-  '它还在跳动。',
-  '老实赚钱，很枯燥吧？'
-];
-let whisperIdx = 0, idleTimer;
-function poke() {
-  const w = $('#whisper');
-  if (!w) return;
-  w.classList.remove('on');
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    if (D > .55 && !document.hidden) {
-      w.textContent = WHISPERS[whisperIdx++ % WHISPERS.length];
-      w.classList.add('on');
-      track('idle_whisper');
-      if (audio) whisperSound();
-    }
-  }, 7000);
-}
-addEventListener('pointermove', poke, { passive: true });
-addEventListener('keydown', poke);
-
-/* ---------------- 4.4 行情数据源（主图 / 迷你图 / 盈亏 共用） ---------------- */
-
-/**
- * 单一行情源：一个价格序列同时驱动
- *   ① 主图（大图，含刻度与事件标记）
- *   ② 迷你图（顶部账户卡片内的走势）
- *   ③ 账户浮动盈亏（由价格相对建仓价的变动换算）
- * 这样图表与数字不会互相矛盾。
- *
- * 价格为 USD/JPY 的简化模拟值（约 155 附近），与持仓标的一致。
- * 所有数值均为剧情演示，不构成任何投资参考。
- */
-const market = {
-  base: 155.00,          // 基准价
-  price: 155.00,         // 当前价
-  entry: 154.80,         // 建仓价
-  history: [],           // 最近价格序列（迷你图用）
-  points: 30,            // 迷你图保留点数
-  tickMs: 2000,
-  // 每 1 日元价格变动对应的盈亏（简化：仓位规模 × 手数换算后的系数）
-  pnlPerYen: 6000
-};
-
-/** 由当前价与建仓价换算浮动盈亏，保证与图表同源 */
-function pnlFromPrice(price) {
-  return (price - market.entry) * market.pnlPerYen;
-}
-
-/** 初始化历史序列，使首帧就有完整走势 */
-function initMarketHistory() {
-  market.price = market.entry;
-  market.history = [];
-  let p = market.entry;
-  for (let i = 0; i < market.points; i++) {
-    p += (Math.random() - .42) * .08;
-    market.history.push(p);
-  }
-  market.price = market.history[market.history.length - 1];
-  ACCOUNT.floatingPnl = pnlFromPrice(market.price);
-}
-
-/** 行情推进一站：更新价格 → 历史窗口 → 盈亏 → 两图 + 账户 */
-function tickMarket() {
-  // 爆仓后价格停摆（“行情停止”也是叙事的一部分）
-  if (ACCOUNT.state === 'bust') return;
-
-  // 缓慢上行的随机漫步：α 决定趋势偏向，β 决定波动幅度
-  const drift = .012;                       // 轻微上行（制造“一直在赚”的错觉）
-  const vol = .10;                          // 波动幅度（日元）
-  const next = market.price + (Math.random() - .5) * vol + drift;
-  market.price = Math.max(market.base * .8, Math.min(market.base * 1.2, next));
-  market.history.push(market.price);
-  if (market.history.length > market.points) market.history.shift();
-
-  // 盈亏由价格派生——不再独立随机
-  ACCOUNT.floatingPnl = pnlFromPrice(market.price);
-
-  drawMiniChart();
-  renderAccount();
-}
-
-/* 4.4a 迷你图：直接用 market.history 绘制 */
-function drawMiniChart() {
-  const box = $('#heroChart');
-  if (!box) return;
-  const W = 300, H = 80;
-  const pts = market.history;
-  if (!pts.length) return;
-  const max = Math.max(...pts), min = Math.min(...pts);
-  const span = max - min || 1;
-  const norm = v => H - 8 - ((v - min) / span) * (H - 16);
-  const coords = pts.map((v, i) =>
-    `${(i / (pts.length - 1) * W).toFixed(1)},${norm(v).toFixed(1)}`).join(' ');
-  const up = ACCOUNT.state !== 'bust' && pts[pts.length - 1] >= pts[0];
-  const color = up ? '#2563EB' : '#DC2626';
-  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-    <polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
-}
-
-/* 4.4b 主图：以完整售价序列绘制，带刻度、事件标记与图例 */
-function drawChart() {
-  const box = $('#bigChart');
-  if (!box) return;
-  const W = 1000, H = 320;
-  const N = 64;
-
-  // 从 market.entry 出发构造一段“先涨后暴跌”的完整行情（与迷你图同一价格体系）
-  const pts = [];
-  let p = market.entry;
-  const crashAt = 44;                        // 第 44 根开始转折
-  for (let i = 0; i < N; i++) {
-    if (i < crashAt) p += .05 + Math.random() * .12;         // 稳步上行
-    else p -= .55 + Math.random() * .45;                     // 暴跌
-    pts.push(p);
-  }
-  const max = Math.max(...pts), min = Math.min(...pts);
-  const span = max - min || 1;
-  const norm = v => H - 46 - ((v - min) / span) * (H - 76);
-  const coords = pts.map((v, i) => `${(i / (N - 1) * W).toFixed(1)},${norm(v).toFixed(1)}`).join(' ');
-  const area = `M0,${H - 30} L${coords.replaceAll(' ', ' L')} L${W},${H - 30} Z`;
-  const lastY = norm(pts[pts.length - 1]);
-  const crashX = crashAt / (N - 1) * W;
-  const maxY = norm(max);
-
-  // 价格刻度（右轴）：4 档，用真实价格数值
-  const priceTicks = Array.from({ length: 4 }, (_, k) => {
-    const v = min + (span / 3) * k;
-    const y = norm(v);
-    return `<text x="${W - 8}" y="${y - 5}" fill="#94A3B8" font-size="18"
-              font-family="monospace" text-anchor="end">${v.toFixed(2)}</text>`;
-  }).join('');
-
-  // 时间刻度（底轴）
-  const timeTicks = ['09:00', '12:00', '15:00', '18:00', '21:00'].map((t, k) => {
-    const x = (k / 4) * (W - 120) + 20;
-    return `<text x="${x}" y="${H - 8}" fill="#94A3B8" font-size="17"
-              font-family="monospace">${t}</text>`;
-  }).join('');
-
-  box.innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
-         aria-label="USD/JPY 模拟行情：先上涨后暴跌，非真实数据">
-      <defs>
-        <linearGradient id="upArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#22C55E" stop-opacity=".30"/>
-          <stop offset="100%" stop-color="#22C55E" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient id="downArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#EF4444" stop-opacity=".35"/>
-          <stop offset="100%" stop-color="#EF4444" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      ${Array.from({ length: 5 }, (_, k) => {
-        const y = 20 + k * (H - 50) / 4;
-        return `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#1E293B"
-                 stroke-width="1" opacity=".45"/>`;
-      }).join('')}
-      ${Array.from({ length: 6 }, (_, k) => {
-        const x = k * W / 5;
-        return `<line x1="${x}" y1="20" x2="${x}" y2="${H - 30}" stroke="#1E293B"
-                 stroke-width="1" opacity=".28"/>`;
-      }).join('')}
-      <path d="${area}" fill="url(#upArea)"/>
-      <polyline points="${coords}" fill="none" stroke="#4ADE80"
-                stroke-width="2.5" stroke-linejoin="round"/>
-      <line x1="${crashX}" y1="20" x2="${crashX}" y2="${H - 30}"
-            stroke="#EF4444" stroke-width="1" stroke-dasharray="5 5" opacity=".7"/>
-      <circle cx="${crashX}" cy="${maxY}" r="5" fill="#EF4444"/>
-      <text x="${crashX + 12}" y="${maxY - 10}" fill="#EF4444" font-size="18"
-            font-family="monospace">高点 ${max.toFixed(2)}</text>
-      ${priceTicks}
-      ${timeTicks}
-    </svg>`;
-
-  // 主图下方的图例/注释（说明是模拟数据与转折事件）
-  const legend = $('#chartLegend');
-  if (legend) {
-    legend.innerHTML = `
-      <span class="lg-dot up"></span><span>USD/JPY · 模拟行情</span>
-      <span class="lg-dot crash"></span><span>事件：强制平仓触发点</span>
-      <span class="lg-note">数值为剧情演示，非真实市场数据</span>`;
-  }
-}
-
-/* 4.5b 账户模型：单一数据源，所有显示值由 derive() 派生 */
-
-/**
- * 说明（也写进 README）：
- * 这是一个简化的演示模型，用于叙事而非真实交易计算。
- *   equity      = deposit + floatingPnl          （账户净值）
- *   usedMargin  = notional / leverage            （已用保证金，此处固定）
- *   freeMargin  = equity - usedMargin            （可用保证金）
- *   marginLevel = equity / usedMargin * 100%     （保证金率）
- * 真实市场里保证金、强平线与负余额保护规则因平台和品种而异，
- * 这里的换算只服务于剧情，不能当作实际交易依据。
- */
 const ACCOUNT = {
-  deposit: 300000,        // 初始本金
-  floatingPnl: 12450,     // 浮动盈亏（可正可负）
-  usedMargin: 60000,      // 已用保证金（50 倍杠杆下的占用）
-  state: 'profit'         // 'profit' | 'bust'
+  deposit: 300000,
+  floatingPnl: 12450,
+  usedMargin: 120000,
+  state: 'profit'
 };
 
-let witnessedBottom = false;
+const market = {
+  base: 155.00,
+  entry: ENTRY,
+  price: 155.12,
+  notional: ACCOUNT.usedMargin * LEVERAGE,
+  get pnlPerYen() { return this.notional / this.base; },
+  history: [],
+  points: 30,
+  tickMs: 2000
+};
 
-/** 从 ACCOUNT 派生全部展示值——任何显示都必须走这里，避免数字互相矛盾 */
+const pnlFromPrice = price => (price - market.entry) * market.pnlPerYen;
+
 function derive() {
   const equity = ACCOUNT.deposit + ACCOUNT.floatingPnl;
   const freeMargin = equity - ACCOUNT.usedMargin;
-  // 保证金率：净值 / 已用保证金。净值 <= 0 时视为 0，避免出现负百分比
   const marginLevel = ACCOUNT.usedMargin > 0 ? Math.max(0, equity / ACCOUNT.usedMargin * 100) : 0;
   return { equity, freeMargin, marginLevel };
 }
 
-/** 保证金率文案分级：随亏损逐级恶化，这是叙事张力的来源 */
+/** 维持率分级：100% 追证 / 50% 强平（日本实务常见档位） */
 function marginText(level) {
-  if (level >= 300) return { text: '充足', cls: 'ok' };
-  if (level >= 150) return { text: '偏低', cls: 'warn' };
-  if (level >= 100) return { text: '危险', cls: 'bad' };
+  if (level >= 200) return { text: '充足', cls: 'ok' };
+  if (level >= 100) return { text: '注意', cls: 'warn' };
+  if (level >= 50) return { text: '危险', cls: 'bad' };
   return { text: '即将强平', cls: 'bad' };
 }
 
-/** 统一的渲染入口：所有数字只在这里写入 DOM */
 function renderAccount() {
   const { equity, freeMargin, marginLevel } = derive();
   const balanceEl = $('#heroBalance');
@@ -599,7 +264,7 @@ function renderAccount() {
 
   balanceEl.textContent = '¥' + Math.round(equity).toLocaleString('zh-CN');
   const p = ACCOUNT.floatingPnl;
-  pnlEl.textContent = (p >= 0 ? '+' : '-') + '¥' + Math.abs(Math.round(p)).toLocaleString('zh-CN');
+  pnlEl.textContent = fmtJPY(p);
   if (pnlBox) pnlBox.className = 'pnl ' + (p >= 0 ? 'up' : 'down');
   if (freeEl) freeEl.textContent = '¥' + Math.round(Math.max(0, freeMargin)).toLocaleString('zh-CN');
   if (marginEl) {
@@ -607,40 +272,1069 @@ function renderAccount() {
     marginEl.textContent = m.text;
     marginEl.className = m.cls;
   }
-  return { equity, freeMargin, marginLevel };
 }
 
-/** 定时器驱动：账户缓慢增长（仅 profit 状态），行情与盈亏同源 */
-function tickAccount() {
-  if (ACCOUNT.state !== 'profit') return;
-  // 由行情 tick 决定盈亏变化，保证图表与数字一致（见 tickMarket）
-  tickMarket();
+function initMarketHistory() {
+  const end = market.entry + ACCOUNT.floatingPnl / market.pnlPerYen;
+  const start = market.entry - 0.35;
+  market.history = [];
+  for (let i = 0; i < market.points; i++) {
+    const k = i / (market.points - 1);
+    market.history.push(start + (end - start) * k + (Math.random() - .45) * .10);
+  }
+  market.price = market.history[market.history.length - 1];
+  ACCOUNT.floatingPnl = pnlFromPrice(market.price);
 }
 
-/** 仅用于测试/调试：重置到初始状态 */
-function resetAccount() {
-  ACCOUNT.deposit = 300000;
-  ACCOUNT.floatingPnl = 12450;
-  ACCOUNT.usedMargin = 60000;
-  ACCOUNT.state = 'profit';
-  witnessedBottom = false;
+function tickMarket() {
+  if (ACCOUNT.state === 'bust' || marketFrozen) return;
+  const drift = .014, vol = .09;
+  const next = market.price + (Math.random() - .5) * vol + drift;
+  market.price = Math.max(market.base * .9, Math.min(market.base * 1.1, next));
+  market.history.push(market.price);
+  if (market.history.length > market.points) market.history.shift();
+  ACCOUNT.floatingPnl = pnlFromPrice(market.price);
+  drawMiniChart();
   renderAccount();
 }
 
+function drawMiniChart() {
+  const box = $('#heroChart');
+  if (!box) return;
+  const W = 300, H = 80;
+  const pts = market.history;
+  if (!pts.length) return;
+  const max = Math.max(...pts), min = Math.min(...pts);
+  const span = max - min || 1;
+  const norm = v => H - 8 - ((v - min) / span) * (H - 16);
+  const coords = pts.map((v, i) => `${(i / (pts.length - 1) * W).toFixed(1)},${norm(v).toFixed(1)}`).join(' ');
+  const up = ACCOUNT.state !== 'bust' && pts[pts.length - 1] >= pts[0];
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="${coords}" fill="none" stroke="${up ? '#2563EB' : '#DC2626'}" stroke-width="2"/></svg>`;
+}
+
+let marketTimer = null, marketFrozen = false;
+function startMarketLoop() {
+  if (marketTimer) return;
+  marketTimer = setInterval(() => { if (!document.hidden) tickMarket(); }, market.tickMs);
+}
+function stopMarketLoop() {
+  if (marketTimer) { clearInterval(marketTimer); marketTimer = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopMarketLoop(); else startMarketLoop();
+});
+
+/* ---------------- 4. 滚动引擎 ---------------- */
+
+const root = document.documentElement;
+const secs = $$('[data-bg]');
+const noiseEl = $('#noise');
+const vig = $('#vig');
+const scan = $('#scan');
+const mainEl = $('main');
+const footEl = $('footer');
+
+let D = 0;
+let ticking = false;
+let currentSection = '';
+let statsLoaded = false;
+let horrorRevealed = false;
+let witnessedBottom = false;
+let pendingBust = false;
+let titleLockUntil = 0;
+
+const BOOT_AT = Date.now();
+const sectionMs = {};          // 每个 section 累计停留
+let lastSectionAt = BOOT_AT;
+let peakY = 0;
+let backScrolls = 0;
+
+/** 粘性区进度：0 = 刚贴顶，1 = 粘性结束 */
+function stickyP(el) {
+  if (!el) return 0;
+  const span = el.offsetHeight - innerHeight;
+  if (span <= 0) return clamp((scrollY - el.offsetTop) / (innerHeight || 1));
+  return clamp((scrollY - el.offsetTop) / span);
+}
+
+function frame() {
+  ticking = false;
+  const vh = innerHeight;
+  const mid = scrollY + vh * .5;
+
+  let i = secs.findIndex(s => s.offsetTop + s.offsetHeight > mid);
+  if (i < 0) i = secs.length - 1;
+  const s = secs[i], n = secs[Math.min(i + 1, secs.length - 1)];
+
+  const p = clamp((((mid - s.offsetTop) / s.offsetHeight) - .55) / .45);
+  let bgC = mix(s.dataset.bg, n.dataset.bg, p);
+  let fgC = mix(s.dataset.fg, n.dataset.fg, p);
+  let acC = mix(s.dataset.ac, n.dataset.ac, p);
+
+  /**
+   * 回顶后的「世界翻转」。
+   * 只改文案不够——白底蓝字里写着「它一直在等你回来」，情绪是错的。
+   * 接近顶部时把整套配色压成近黑 + 血红，越往下滚恢复得越多。
+   */
+  let horrorK = 0;
+  if (horrorRevealed) {
+    horrorK = clamp(1 - scrollY / (vh * 1.15));
+    if (horrorK > 0) {
+      const k = Math.pow(horrorK, .8);
+      bgC = mix(bgC, '#0F0A0C', k * .96);
+      fgC = mix(fgC, '#F2DADA', k * .92);
+      acC = mix(acC, '#C8102E', k * .92);
+    }
+  }
+
+  root.style.setProperty('--bg', themeColor(bgC, 'bg'));
+  root.style.setProperty('--fg', themeColor(fgC, 'fg'));
+  root.style.setProperty('--accent', themeColor(acC, 'ac'));
+  D = +s.dataset.d + (+n.dataset.d - +s.dataset.d) * p;
+  if (horrorRevealed) D = Math.max(D, .22);
+  root.style.setProperty('--d', D.toFixed(3));
+
+  noiseEl.style.opacity = clamp((D - .3) * .5, 0, .34);
+  vig.style.opacity = Math.max(clamp((D - .42) * .95), horrorK * .5);
+  scan.style.opacity = clamp((D - .66) * 1.1, 0, .4);
+
+  // 灰化收束只压到 .22：早期版本用 .35，把「我决定远离 FX」这个唯一的
+  // 行动按钮也一起灰掉了——越是需要红色警示的段落，红色被吃得越狠。
+  const gray = clamp((D - .82) / .18);
+  const filter = gray > .01 ? `grayscale(${(gray * .22).toFixed(3)}) brightness(${(1 - gray * .10).toFixed(3)})` : '';
+  if (mainEl) mainEl.style.filter = filter;
+  if (footEl) footEl.style.filter = filter;
+
+  const titles = [
+    [0,   'Kurumi FX 学院 · 轻松赚回 2000 万'],
+    [.26, 'Kurumi FX · 关于讲师'],
+    [.42, 'Kurumi FX · 03:14'],
+    [.50, 'Kurumi FX · 今晚'],
+    [.58, 'Kurumi FX · 再等等'],
+    [.66, 'Kurumi · 强制平仓'],
+    [.74, 'kurumi — 系统日志'],
+    [.82, 'kurumi — 你的记录'],
+    [.93, '这不是投资'],
+    [1,   '别成为下一个久留美']
+  ];
+  let tt = titles[0][1];
+  titles.forEach(([th, v]) => { if (D >= th) tt = v; });
+  if (horrorRevealed) tt = 'Kurumi FX · 清算完成';
+  if (!document.hidden && Date.now() > titleLockUntil && document.title !== tt) document.title = tt;
+
+  const id = s.id || `sec-${i}`;
+  if (id !== currentSection) {
+    const now = Date.now();
+    sectionMs[currentSection] = (sectionMs[currentSection] || 0) + (now - lastSectionAt);
+    lastSectionAt = now;
+    currentSection = id;
+    track('section_enter', id);
+  }
+
+  if (D > .96 && !statsLoaded) { statsLoaded = true; loadStats(); }
+  if (D > .95) witnessedBottom = true;
+
+  checkSplashes();
+  updateNotify();
+  updateChart();
+  updateLosscut();
+  updateLog();
+  updateYou();
+  updateWhisperAnchor();
+  updateDeepMode();
+
+  syncScrollBtn();
+  updateAudio();
+}
+
+/** 深度区：隐藏营销导航与悬浮控件 */
+const DEEP_SECS = ['#losscut', '#log'];
+function updateDeepMode() {
+  const deep = DEEP_SECS.some(sel => {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.top < innerHeight * .35 && r.bottom > innerHeight * .65;
+  });
+  document.body.classList.toggle('deep', deep);
+}
+
+addEventListener('scroll', () => {
+  if (!ticking) { ticking = true; requestAnimationFrame(frame); }
+  const docH = document.documentElement.scrollHeight - innerHeight;
+  if (docH > 0) track('scroll', (scrollY / docH).toFixed(3));
+
+  // 「往回滚」计数：每次明显上滑（>250px）记一次
+  if (scrollY > peakY) peakY = scrollY;
+  else if (peakY - scrollY > 250) { backScrolls++; peakY = scrollY; }
+}, { passive: true });
+addEventListener('resize', () => { frame(); sizeNoise(); sizePaint(); });
+
+/* ---------------- 4.1 噪点 ---------------- */
+
+let nctx = noiseEl.getContext('2d');
+let imgData = nctx.createImageData(320, 180);
+
+function sizeNoise() {
+  // 1 个噪声像素 ≈ 2 个 CSS 像素：放大后是颗粒，不是马赛克
+  const w = Math.max(160, Math.ceil(innerWidth / 2));
+  const h = Math.max(120, Math.ceil(innerHeight / 2));
+  if (noiseEl.width === w && noiseEl.height === h) return;
+  noiseEl.width = w; noiseEl.height = h;
+  imgData = nctx.createImageData(w, h);
+}
+
+let noiseFrame = 0;
+function drawNoise() {
+  if (REDUCED_MOTION || document.hidden) return;
+  if (+noiseEl.style.opacity < .01) return;
+  const w = noiseEl.width, h = noiseEl.height;
+  const band = Math.ceil(h / 4);
+  const from = (noiseFrame % 4) * band;
+  const to = Math.min(h, from + band);
+  const d = imgData.data;
+  for (let y = from; y < to; y++) {
+    for (let x = 0; x < w; x++) {
+      const k = (y * w + x) * 4;
+      const v = 90 + Math.random() * 90;
+      d[k] = d[k + 1] = d[k + 2] = v;
+      d[k + 3] = 255;
+    }
+  }
+  nctx.putImageData(imgData, 0, 0, 0, from, w, to - from);
+  noiseFrame++;
+}
+
+/* ---------------- 4.2 抖动 ---------------- */
+
+setInterval(() => {
+  if (REDUCED_MOTION || document.hidden || D < .18) return;
+  const all = $$('.twitch');
+  if (!all.length) return;
+  const el = all[Math.floor(Math.random() * all.length)];
+  const r = el.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > innerHeight) return;
+  if (Math.random() < D * .75) {
+    const k = D * D * 10;
+    el.style.setProperty('--tw-x', `${(Math.random() - .5) * k}px`);
+    el.style.setProperty('--tw-y', `${(Math.random() - .5) * k}px`);
+    el.style.setProperty('--tw-sk', `${(Math.random() - .5) * k * .4}deg`);
+    setTimeout(() => {
+      el.style.setProperty('--tw-x', '0px');
+      el.style.setProperty('--tw-y', '0px');
+      el.style.setProperty('--tw-sk', '0deg');
+    }, 70 + Math.random() * 130);
+  }
+}, 120);
+
+/* ---------------- 4.3 耳语 ---------------- */
+
+const WHISPERS = [
+  '再补一点，就快回本了。',
+  '你确定要现在平仓吗？',
+  '就最后一次。',
+  '它还在跳动。',
+  '老实赚钱，很枯燥吧？'
+];
+let whisperIdx = 0, idleTimer;
+const whisperEl = $('#whisper');
+
+function poke() {
+  if (!whisperEl) return;
+  whisperEl.classList.remove('on');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (D > .5 && !document.hidden) {
+      whisperEl.textContent = WHISPERS[whisperIdx++ % WHISPERS.length];
+      whisperEl.classList.add('on');
+      track('idle_whisper');
+      if (audio) whisperSound();
+    }
+  }, 7000);
+}
+addEventListener('pointermove', poke, { passive: true });
+addEventListener('keydown', poke);
+
+function updateWhisperAnchor() {
+  if (!whisperEl) return;
+  const end = $('#end');
+  const nearEnd = end && end.offsetTop - scrollY < innerHeight * .8;
+  whisperEl.classList.toggle('high', !!nearEnd);
+
+  // 恐惧值不足时清掉残留的低语（程序化滚动不会触发 pointermove）
+  if (D < .45) whisperEl.classList.remove('on');
+
+  const dense = ['#notify', '#chart', '#losscut', '#log', '#you', '#end', '.kurumi-stage'];
+  const collide = dense.some(id => {
+    const el = $(id);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.top < innerHeight * .72 && r.bottom > innerHeight * .3;
+  });
+  whisperEl.classList.toggle('mute', collide);
+}
+
+/* =================================================================
+   5. 颜料转场
+   -----------------------------------------------------------------
+   参考原作 OP 的转场：不是「模糊色块铺满屏幕」，而是
+     · 黑底上极锐利的不透明颜料块，大小差异极大
+     · 被甩出来的细长液体丝线，末端带一颗珠子
+     · 大量细小的飞溅颗粒，密度沿喷射方向衰减
+     · 颜料「挂」在画面上停一会儿，然后才开始消失
+   所以这里分三层画：颜料块（不规则多边形 + 二次曲线平滑）、
+   拖丝（沿贝塞尔采样成锥形）、颗粒。整层先画进离屏缓冲，
+   再统一淡出 —— 这样颜料是真的「留在墙上」，而不是每帧随机闪烁。
+
+   配色由调用方决定：同一个效果，前半段是糖纸色，后半段是血色。
+   ================================================================= */
+
+const paintEl = $('#paint');
+const pctx = paintEl.getContext('2d');
+let paintBuf = document.createElement('canvas');
+let bctx = paintBuf.getContext('2d');
+let splashToken = 0;
+
+const TAU = Math.PI * 2;
+
 /**
- * 爆仓：从「当前显示值」开始动画，避免数字先回跳。
- * 亏损推进到本金耗尽，保证金率跌破强平线，持仓被清空。
+ * 调色板。
+ * veil 是转场时压住页面的底色 —— 必须是深的。
+ * 早期版本用同色系亮色当 veil，结果整屏变成一层粉色滤镜，
+ * 而原作是「黑底上的彩色颜料」：底色越暗，颜料才越跳。
  */
+const PALETTES = {
+  bright: { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#FF8A3D'], w: [.46, .22, .14, .1, .08], veil: '#170F14', veilA: .78, drip: false },
+  // 混进一块脏红：还是糖纸色，但有一个颜色不对
+  wrong:  { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#6E0C14'], w: [.38, .2, .12, .1, .2], veil: '#150C12', veilA: .80, drip: false },
+  red:    { colors: ['#E03A3A', '#C8102E', '#8C0F1C', '#5C0A12'], w: [.34, .3, .22, .14], veil: '#240508', veilA: .84, drip: true },
+  blood:  { colors: ['#C8102E', '#A3140B', '#8C0F1C', '#5C0A12'], w: [.32, .3, .24, .14], veil: '#2A0409', veilA: .88, drip: true }
+};
+
+function sizePaint() {
+  paintEl.width = innerWidth;
+  paintEl.height = innerHeight;
+  paintBuf.width = innerWidth;
+  paintBuf.height = innerHeight;
+  bctx = paintBuf.getContext('2d');
+}
+
+/** 按权重取色，避免均匀随机导致五彩斑斓像糖果 */
+function pickColor(pal) {
+  let r = Math.random();
+  for (let i = 0; i < pal.colors.length; i++) {
+    r -= pal.w[i];
+    if (r <= 0) return pal.colors[i];
+  }
+  return pal.colors[0];
+}
+
+/**
+ * 一块颜料：极坐标上抖动的多边形 + 二次曲线过中点平滑。
+ * 抖动幅度故意放大（0.42~1.6），否则每块都长成同一颗糖豆。
+ */
+function paintBlob(ctx, x, y, r, ang, stretch, color, irregular = 1) {
+  const n = 8 + (r > 58 ? 6 : 0) + (Math.random() * 6 | 0);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = i / n * TAU + (Math.random() - .5) * .5;
+    const rr = r * (1 - .42 * irregular + Math.random() * 1.2 * irregular);
+    const lx = Math.cos(a) * rr * stretch;
+    const ly = Math.sin(a) * rr;
+    pts.push([
+      x + Math.cos(ang) * lx - Math.sin(ang) * ly,
+      y + Math.sin(ang) * lx + Math.cos(ang) * ly
+    ]);
+  }
+  ctx.beginPath();
+  ctx.moveTo((pts[0][0] + pts[n - 1][0]) / 2, (pts[0][1] + pts[n - 1][1]) / 2);
+  for (let i = 0; i < n; i++) {
+    const c = pts[i], nx = pts[(i + 1) % n];
+    ctx.quadraticCurveTo(c[0], c[1], (c[0] + nx[0]) / 2, (c[1] + nx[1]) / 2);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  // 朝来向拖一条尾 —— 这是「液体」和「色块」最大的区别
+  if (stretch > 1.15) {
+    const tl = r * (0.9 + Math.random() * 2.4) * stretch;
+    const back = ang + Math.PI;
+    const side = Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(back + side) * r * .42, y + Math.sin(back + side) * r * .42);
+    ctx.lineTo(x + Math.cos(back) * tl, y + Math.sin(back) * tl);
+    ctx.lineTo(x + Math.cos(back - side) * r * .42, y + Math.sin(back - side) * r * .42);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+const qbez = (p0, p1, p2, t) => {
+  const u = 1 - t;
+  return [
+    u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
+    u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]
+  ];
+};
+
+/** 拖丝：沿贝塞尔采样成锥形，由粗到细，尾巴挂一颗珠子 */
+function filament(ctx, x0, y0, ang, len, w, color, curl) {
+  const a = ang + curl;
+  const p0 = [x0, y0];
+  const p1 = [x0 + Math.cos(a - curl * .9) * len * .5, y0 + Math.sin(a - curl * .9) * len * .5];
+  const p2 = [x0 + Math.cos(a) * len, y0 + Math.sin(a) * len];
+  const N = 16;
+  const pts = [];
+  for (let i = 0; i <= N; i++) pts.push(qbez(p0, p1, p2, i / N));
+
+  const left = [], right = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[Math.min(pts.length - 1, i + 1)];
+    const o = pts[Math.max(0, i - 1)];
+    let dx = q[0] - o[0], dy = q[1] - o[1];
+    const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const ww = lerp(w, w * .1, Math.pow(i / (pts.length - 1), .7)) / 2;
+    left.push([p[0] - dy * ww, p[1] + dx * ww]);
+    right.push([p[0] + dy * ww, p[1] - dx * ww]);
+  }
+  ctx.beginPath();
+  ctx.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < left.length; i++) ctx.lineTo(left[i][0], left[i][1]);
+  for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(p2[0], p2[1], Math.max(1.1, w * .22), 0, TAU);
+  ctx.fill();
+}
+
+/**
+ * 一次转场。
+ *
+ * 密度分布是关键：早期版本用均匀随机，结果全屏撒得像彩纸。
+ * 现在按指数衰减堆在喷射源附近 —— 近处是几个大团块叠成的一整片，
+ * 远处只剩零星的小点和拖丝，这才是「喷」出来的样子。
+ *
+ * 每一块都有出生时间，按序永久画进离屏缓冲，所以颜料是真的挂在墙上，
+ * 主画布每帧只做「底色 + 缓冲 + 淡出」。
+ */
+function splash(key, opts = {}) {
+  const pal = PALETTES[key] || PALETTES.bright;
+  if (REDUCED_MOTION) { flashScreen(pal.veil, .34, 320); return; }
+
+  const token = ++splashToken;
+  const W = paintEl.width, H = paintEl.height;
+  if (!W || !H) return;
+
+  const BURST = opts.burst ?? 430;
+  const HOLD = opts.hold ?? 340;
+  const FADE = opts.fade ?? 620;
+  const total = BURST + HOLD + FADE;
+
+  bctx.clearRect(0, 0, W, H);
+
+  // 喷射源：靠近某条边，朝画面内侧
+  const side = Math.random() < .5 ? -1 : 1;
+  const ox = W * (0.5 + side * (0.3 + Math.random() * 0.14));
+  const oy = H * (0.26 + Math.random() * 0.48);
+  const dir = Math.atan2(H * .5 - oy, W * .5 - ox) + (Math.random() - .5) * .4;
+  const maxR = Math.hypot(W, H) * .9;
+
+  const queue = [];
+  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * .9;
+
+  // 每一层：数量、距离分布、半径范围、角扩散
+  const layers = [
+    { n: 24, dExp: 2.2, dMul: .36, rMin: 30, rMax: 88, spread: .34, tMul: .55 },
+    { n: 34, dExp: 1.8, dMul: .62, rMin: 14, rMax: 52, spread: .55, tMul: .72 },
+    { n: 54, dExp: 1.35, dMul: 1.0, rMin: 4, rMax: 16, spread: .85, tMul: .88 },
+    { n: 115, dExp: 1.7, dMul: .92, rMin: .8, rMax: 3.4, spread: 1.0, tMul: 1 }
+  ];
+
+  layers.forEach(L => {
+    for (let i = 0; i < L.n; i++) {
+      const k = Math.pow(Math.random(), L.dExp);
+      const dist = k * maxR * L.dMul;
+      const ang = dir + gauss() * L.spread * (.4 + k);
+      const x = ox + Math.cos(ang) * dist;
+      const y = oy + Math.sin(ang) * dist;
+      if (x < -160 || x > W + 160 || y < -160 || y > H + 160) continue;
+      const r = lerp(L.rMax, L.rMin, k) * (0.5 + Math.random() * 1.0);
+      const stretch = 1 + k * 2.1;
+      const color = pickColor(pal);
+      const at = 24 + k * BURST * L.tMul + Math.random() * 70;
+      if (L.rMin < 2) {
+        push(at, r, ctx => {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, r * (1.3 + k * 1.8), r, 0, 0, TAU);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.restore();
+        });
+      } else {
+        push(at, r, ctx => paintBlob(ctx, x, y, r, ang, stretch, color));
+      }
+    }
+  });
+
+  // 拖丝：从大团块附近甩出去，短而粗，带卷曲
+  for (let i = 0; i < 26; i++) {
+    const k = Math.pow(Math.random(), 1.9);
+    const ang = dir + gauss() * .7;
+    const d0 = k * maxR * .3;
+    const x0 = ox + Math.cos(ang) * d0;
+    const y0 = oy + Math.sin(ang) * d0;
+    const len = 60 + Math.random() * 300 * (1 - k * .5);
+    const w = 1.4 + Math.random() * 6.5;
+    const curl = (Math.random() - .5) * 2.4;
+    const color = pickColor(pal);
+    const at = 40 + Math.random() * BURST * .55;
+    push(at, w, ctx => filament(ctx, x0, y0, ang, len, w, color, curl));
+  }
+
+  function push(at, size, draw) { queue.push({ at, size, draw }); }
+
+  queue.sort((a, b) => a.at - b.at || b.size - a.size);
+
+  // 下淌：只从真正有颜料的地方挂下来
+  const drips = !pal.drip ? [] : Array.from({ length: 10 }, () => {
+    const k = Math.pow(Math.random(), 1.7);
+    const ang = dir + gauss() * .5;
+    return {
+      x: ox + Math.cos(ang) * k * maxR * .42,
+      y: oy + Math.sin(ang) * k * maxR * .42,
+      w: 5 + Math.random() * 13,
+      len: 50 + Math.random() * 210,
+      sp: .7 + Math.random() * .9,
+      c: pal.colors[pal.colors.length - 1]
+    };
+  });
+
+  const t0 = performance.now();
+  let drawn = 0;
+
+  (function frame(now) {
+    if (token !== splashToken) return;
+    const t = now - t0;
+    if (t > total) { pctx.clearRect(0, 0, W, H); return; }
+
+    while (drawn < queue.length && queue[drawn].at <= t) {
+      queue[drawn].draw(bctx);
+      drawn++;
+    }
+
+    const kf = clamp((t - BURST - HOLD) / FADE);
+    const veilA = pal.veilA * clamp(t / 140) * (1 - kf * .92);
+
+    pctx.clearRect(0, 0, W, H);
+    if (veilA > .002) {
+      pctx.globalAlpha = veilA;
+      pctx.fillStyle = pal.veil;
+      pctx.fillRect(0, 0, W, H);
+    }
+    pctx.globalAlpha = 1 - Math.pow(kf, 1.5) * .97;
+    pctx.drawImage(paintBuf, 0, 0);
+
+    // 往下淌：等颜料挂住之后才出现
+    if (t > BURST * .55) {
+      const kd = clamp((t - BURST * .55) / (total - BURST * .55));
+      pctx.globalAlpha = (1 - kf) * .92;
+      drips.forEach(d => {
+        const y0 = d.y + kd * d.sp * H * 1.15;
+        const y1 = y0 + d.len;
+        if (y1 < 0) return;
+        const wB = d.w * .28;
+        pctx.fillStyle = d.c;
+        pctx.beginPath();
+        pctx.moveTo(d.x - d.w / 2, y0);
+        pctx.lineTo(d.x + d.w / 2, y0);
+        pctx.lineTo(d.x + wB / 2, y1);
+        pctx.lineTo(d.x - wB / 2, y1);
+        pctx.closePath();
+        pctx.fill();
+        pctx.beginPath();
+        pctx.arc(d.x, y1, wB * 1.05, 0, TAU);
+        pctx.fill();
+      });
+    }
+
+    pctx.globalAlpha = 1;
+    requestAnimationFrame(frame);
+  })(t0);
+
+  if (audio) splashSound();
+  track('splash_' + key);
+}
+
+
+
+/* 在哪里放转场：越靠后颜色越像血 */
+const SPLASH_AT = {
+  '#success': 'bright',   // 彩色的，这是全页最"快乐"的一屏
+  '#notify':  'wrong',    // 还是彩色，但混了一块脏红 —— 第一个不对劲
+  '#losscut': 'blood'     // 暗红，往下淌
+};
+const splashFired = {};
+
+function checkSplashes() {
+  for (const sel in SPLASH_AT) {
+    if (splashFired[sel]) continue;
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.top < innerHeight * .46 && r.bottom > 0) {
+      splashFired[sel] = true;
+      splash(SPLASH_AT[sel]);
+    }
+  }
+}
+
+/* =================================================================
+   6.1 通知堆栈 —— 今晚，你的手机
+   ================================================================= */
+const NOTES = [
+  { time: '21:04', app: 'Kurumi FX', ico: 'K', cls: '',      title: '入金已完成', text: '¥100,000 已入账。祝你交易顺利。' },
+  { time: '23:47', app: 'Kurumi FX', ico: 'K', cls: '',      title: '入金已完成', text: '¥300,000 已入账。<b>这笔钱是从哪来的？</b>' },
+  { time: '02:31', app: 'Kurumi FX', ico: '!', cls: 'warn',  title: '追加保证金通知', text: '需要入金 <b>¥84,200</b>。剩余时间 47 分钟。' },
+  { time: '03:14', app: 'Kurumi FX', ico: '!', cls: 'alert', title: '保证金维持率 96%', text: '已低于警戒线。持仓存在被强制平仓的风险。' },
+  { time: '03:16', app: 'Kurumi FX', ico: '×', cls: 'alert', title: '强制平仓已执行', text: '全部持仓已平仓。账户余额 <b>¥0</b>。' }
+];
+
+let notifyShown = -1;
+const npStack = $('#npStack');
+const npCount = $('#npCount');
+const npTime = $('#npTime');
+const npHint = $('#npHint');
+
+function updateNotify() {
+  const sec = $('#notify');
+  if (!sec || !npStack) return;
+  const p = stickyP(sec);
+  const k = p < .18 ? 0 : Math.min(NOTES.length, Math.ceil((p - .18) / .74 * NOTES.length));
+  if (k === notifyShown) return;
+  const grew = k > notifyShown;
+  notifyShown = k;
+
+  npStack.innerHTML = '';
+  NOTES.slice(0, k).forEach((nt, idx) => {
+    const el = document.createElement('div');
+    el.className = 'np-note ' + nt.cls;
+    el.innerHTML = `<div class="np-note__ico">${nt.ico}</div>
+      <div class="np-note__body">
+        <div class="np-note__top"><span>${nt.app}</span><span>${nt.time}</span></div>
+        <div class="np-note__title">${nt.title}</div>
+        <div class="np-note__text">${nt.text}</div>
+      </div>`;
+    npStack.appendChild(el);
+    requestAnimationFrame(() => setTimeout(() => el.classList.add('on'), 30 + idx * 8));
+  });
+  if (npCount) npCount.textContent = k;
+  if (npTime && k > 0) npTime.textContent = NOTES[k - 1].time;
+  // 最后一条落下后，才亮出「发送方是你」——这是整段唯一一句点破的话
+  if (npHint) npHint.classList.toggle('on', k >= NOTES.length);
+  if (grew && k > 0) tickSound(.03);
+}
+
+/* =================================================================
+   6.2 K 线：滚动驱动打印 + 崩塌
+   ================================================================= */
+
+const CHART = { W: 1000, H: 340, N: 52, pad: 6, crashAt: 40, data: [], revealed: -1, fired: false };
+const candleGroups = () => $$('#bigChart .cd');
+
+function buildCandles() {
+  const list = [];
+  let price = 154.85;
+  for (let i = 0; i < CHART.N; i++) {
+    const open = price;
+    let close;
+    if (i < CHART.crashAt) {
+      close = Math.random() < .26
+        ? open - .08 - Math.random() * .30
+        : open + .15 + Math.random() * .55;
+    } else if (i === CHART.crashAt) {
+      close = open - 9.2;                                 // 那根 K 线
+    } else {
+      close = open - .55 - Math.random() * 1.05;
+    }
+    const high = Math.max(open, close) + Math.random() * .55;
+    const low = Math.min(open, close) - Math.random() * .6;
+    list.push({ open, close, high, low });
+    price = close;
+  }
+  return list;
+}
+
+function renderChart() {
+  const box = $('#bigChart');
+  if (!box) return;
+  CHART.data = buildCandles();
+  const { W, H, N, pad } = CHART;
+  const all = CHART.data.flatMap(c => [c.high, c.low]);
+  const max = Math.max(...all), min = Math.min(...all);
+  const span = max - min || 1;
+  const y = v => H - 26 - ((v - min) / span) * (H - 56);
+  const step = (W - pad * 2) / N;
+  const bw = step * .58;
+
+  const grid = Array.from({ length: 5 }, (_, k) => {
+    const yy = 14 + k * (H - 44) / 4;
+    return `<line x1="0" y1="${yy.toFixed(1)}" x2="${W}" y2="${yy.toFixed(1)}" stroke="#1B2430" stroke-width="1"/>`;
+  }).join('');
+
+  const candles = CHART.data.map((c, i) => {
+    const up = c.close >= c.open;
+    const col = up ? '#2EA86A' : '#E03A3A';
+    const x = pad + i * step + step / 2;
+    const yO = y(c.open), yC = y(c.close);
+    const top = Math.min(yO, yC), hgt = Math.max(1.4, Math.abs(yO - yC));
+    return `<g class="cd" data-i="${i}" opacity="0">
+      <line x1="${x.toFixed(1)}" y1="${y(c.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(c.low).toFixed(1)}" stroke="${col}" stroke-width="1.4"/>
+      <rect x="${(x - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" fill="${col}" rx="1"/>
+    </g>`;
+  }).join('');
+
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+      aria-label="USD/JPY 模拟行情：先上涨后暴跌，非真实数据">
+      ${grid}${candles}
+      <line id="scanline" x1="0" y1="0" x2="0" y2="${H}" stroke="#4A6A96" stroke-width="2" opacity="0"/>
+    </svg>`;
+
+  const legend = $('#chartLegend');
+  if (legend) {
+    legend.innerHTML = `<span class="lg-dot up"></span><span>上涨 · 建仓 ${ENTRY.toFixed(2)}</span>
+      <span class="lg-dot crash"></span><span>18:00 强制平仓触发</span>
+      <span class="lg-note">模拟行情 · 非真实数据</span>`;
+  }
+
+  const priceBox = $('#chartPrice');
+  if (priceBox) {
+    priceBox.innerHTML = Array.from({ length: 5 }, (_, k) => {
+      const v = min + (span / 4) * k;
+      return `<span style="top:${((y(v) / H) * 100).toFixed(2)}%">${v.toFixed(2)}</span>`;
+    }).join('');
+  }
+  const axis = $('#chartAxis');
+  if (axis) {
+    axis.innerHTML = ['09:00', '12:00', '15:00', '18:00', '21:00'].map((tt, k, arr) => {
+      const left = (k / (arr.length - 1)) * 96 + 2;
+      return `<span style="left:${left.toFixed(2)}%">${tt}</span>`;
+    }).join('');
+  }
+}
+
+function revealCandles(count, atEdge) {
+  const groups = candleGroups();
+  for (let i = 0; i < count; i++) groups[i].setAttribute('opacity', '1');
+  for (let i = count; i < groups.length; i++) groups[i].setAttribute('opacity', '0');
+  const line = $('#scanline');
+  if (line && groups.length) {
+    const g = groups[Math.min(count, groups.length - 1)];
+    const ref = g.querySelector('line');
+    if (ref) {
+      line.setAttribute('x1', ref.getAttribute('x1'));
+      line.setAttribute('x2', ref.getAttribute('x1'));
+      line.setAttribute('opacity', atEdge ? '.5' : '0');
+    }
+  }
+}
+
+function updateChart() {
+  if (!CHART.data.length) return;
+  const panel = $('.chart-panel');
+  if (!panel) return;
+  const r = panel.getBoundingClientRect();
+  const local = clamp((innerHeight * .92 - r.top) / (innerHeight * .84));
+  const count = Math.round(local * CHART.N);
+  if (count === CHART.revealed) return;
+  CHART.revealed = count;
+  revealCandles(count, local > .02 && local < .98);
+
+  const idx = Math.max(0, Math.min(CHART.N - 1, count - 1));
+  const c = CHART.data[idx];
+  const pnlEl = $('#chartPnl');
+  if (pnlEl && c) {
+    const pnl = pnlFromPrice(c.close);
+    pnlEl.textContent = fmtJPY(pnl);
+    pnlEl.className = pnl >= 0 ? 'up' : 'down';
+  }
+
+  if (!CHART.fired && count > CHART.crashAt) {
+    CHART.fired = true;
+    crashImpact();
+  }
+  // 全部揭示后冻结行情：价格停摆，但不动 hero 的账户数字。
+  // hero 归零必须留给「回到顶部」那一次清算，否则首次访客往回滚时
+  // 会看到账户早就死了，最后一击就失效了。
+  if (count >= CHART.N) {
+    marketFrozen = true;
+    track('chart_complete');
+  }
+}
+
+function crashImpact() {
+  crashSound();
+  splash('red', { cover: 320, hold: 90, fade: 640 });   // 这一根之后，转场的颜色变了
+  document.body.classList.add('shake');
+  setTimeout(() => document.body.classList.remove('shake'), 460);
+  flashScreen('#E03A3A', .2, 240);
+  track('chart_crash');
+}
+
+/** 全屏闪烁：不依赖音频的一次性冲击帧 */
+function flashScreen(color, opacity, ms) {
+  const f = document.createElement('div');
+  f.style.cssText = `position:fixed;inset:0;z-index:150;pointer-events:none;background:${color};opacity:0;transition:opacity ${ms}ms ease-out`;
+  document.body.appendChild(f);
+  requestAnimationFrame(() => { f.style.opacity = String(opacity); });
+  setTimeout(() => { f.style.opacity = '0'; }, ms);
+  setTimeout(() => f.remove(), ms * 2 + 400);
+}
+
+/* =================================================================
+   6.3 强制平仓
+   ================================================================= */
+
+let losscutFired = false, lsLinesShown = -1;
+
+function buildDrips() {
+  const box = $('#drips');
+  if (!box || box.childElementCount) return;
+  for (let i = 0; i < 9; i++) {
+    const el = document.createElement('i');
+    el.style.setProperty('--w', (3 + Math.random() * 9).toFixed(1) + 'px');
+    el.style.setProperty('--h', (18 + Math.random() * 42).toFixed(1) + 'vh');
+    el.style.setProperty('--dur', (9 + Math.random() * 9).toFixed(1) + 's');
+    el.style.setProperty('--delay', (-Math.random() * 12).toFixed(1) + 's');
+    el.style.left = (Math.random() * 100).toFixed(2) + '%';
+    el.style.opacity = (0.35 + Math.random() * 0.5).toFixed(2);
+    box.appendChild(el);
+  }
+}
+
+function updateLosscut() {
+  const sec = $('#losscut');
+  if (!sec) return;
+  const p = stickyP(sec);
+  const vortex = sec.querySelector('.losscut__vortex');
+  const title = $('#losscutTitle');
+  const kurumi = $('#losscutKurumi');
+  const black = $('#losscutBlack');
+
+  if (vortex) vortex.style.transform = `scale(${(1.04 + p * .16).toFixed(3)}) rotate(${(p * 6).toFixed(2)}deg)`;
+
+  const tp = clamp((p - .10) / .10);
+  if (title) {
+    title.style.opacity = String(tp.toFixed(3));
+    title.style.transform = `scale(${lerp(1.55, 1, 1 - Math.pow(1 - tp, 3)).toFixed(3)})`;
+    title.style.filter = `blur(${lerp(12, 0, tp).toFixed(1)}px) drop-shadow(0 18px 40px rgba(0,0,0,.9))`;
+  }
+  if (!losscutFired && p > .12) {
+    losscutFired = true;
+    crashSound();
+    document.body.classList.add('shake');
+    setTimeout(() => document.body.classList.remove('shake'), 460);
+    track('losscut_title');
+  }
+
+  if (kurumi) {
+    const k = clamp(p / .9);
+    kurumi.style.transform = `translate(-50%, ${lerp(-52, -38, k).toFixed(2)}%) scale(${lerp(.90, 1.06, k).toFixed(3)}) rotate(${(k * 3.2).toFixed(2)}deg)`;
+    kurumi.style.opacity = String(clamp((p - .02) / .12).toFixed(3));
+  }
+
+  const n = p > .74 ? 3 : p > .58 ? 2 : p > .42 ? 1 : 0;
+  if (n !== lsLinesShown) {
+    lsLinesShown = n;
+    ['#lsLine1', '#lsLine2', '#lsLine3'].forEach((sel, i) => {
+      const el = $(sel);
+      if (el) el.classList.toggle('on', i < n);
+    });
+    if (n === 3) track('losscut_copy');
+  }
+
+  if (black) black.style.opacity = String(clamp((p - .86) / .14).toFixed(3));
+}
+
+/* =================================================================
+   6.4 系统日志
+   ================================================================= */
+
+let logLines = null, logShown = -1;
+
+function updateLog() {
+  const sec = $('#log');
+  if (!sec) return;
+  if (!logLines) logLines = $$('#term .l');
+  if (!logLines.length) return;
+  const p = stickyP(sec);
+  const n = Math.min(logLines.length, Math.floor(p * (logLines.length + 2.2)));
+  if (n === logShown) return;
+  logShown = n;
+  logLines.forEach((el, i) => el.classList.toggle('on', i < n));
+  if (n >= logLines.length) track('log_end');
+}
+
+/* =================================================================
+   6.5 「你的记录」
+   -----------------------------------------------------------------
+   全页唯一使用读者真实数据的地方。它不说话，只报数。
+   最有效的一句是「你在强制平仓那一屏停了 41 秒」——因为这可能是真的。
+   ================================================================= */
+
+const SEC_LABEL = {
+  top: '课程首页', features: '课程特色', success: '学员故事',
+  teacher: '关于讲师', notify: '今晚的推送', chart: '行情回顾',
+  losscut: '强制平仓', log: '系统日志', you: '你的记录',
+  end: '最后的话'
+};
+
+let youLastFill = 0, youFilled = false;
+
+function sectionLabel(id) {
+  if (SEC_LABEL[id]) return SEC_LABEL[id];
+  const i = secs.findIndex(s => s.id === id);
+  return i >= 0 ? `第 ${i + 1} 屏` : '—';
+}
+
+function updateYou() {
+  const sec = $('#you');
+  if (!sec) return;
+  const r = sec.getBoundingClientRect();
+  if (r.top > innerHeight || r.bottom < 0) return;
+  const now = Date.now();
+  if (now - youLastFill < 900) return;
+  youLastFill = now;
+
+  const dwell = now - BOOT_AT;
+  const set = (sel, val, hot) => {
+    const el = $(sel);
+    if (!el) return;
+    el.textContent = val;
+    el.classList.toggle('hot', !!hot);
+  };
+
+  set('#youSession', sessionId ? '#' + sessionId.slice(0, 8).toUpperCase() : '本地');
+  set('#youClock', new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+  set('#youDwell', mmss(dwell));
+  set('#youBack', backScrolls ? `${backScrolls} 次` : '0 次', backScrolls > 0);
+
+  // 停留最久的一屏（当前屏要补上未结算的时间）
+  const acc = { ...sectionMs };
+  acc[currentSection] = (acc[currentSection] || 0) + (now - lastSectionAt);
+  let topId = '', topMs = 0;
+  for (const id in acc) if (acc[id] > topMs) { topMs = acc[id]; topId = id; }
+  set('#youLongest', topId ? `${sectionLabel(topId)} · ${Math.round(topMs / 1000)} 秒` : '—', topId === 'losscut');
+
+  // 只陈述可核对的事实，不编造
+  const lineEl = $('#youLine');
+  if (lineEl) {
+    const lc = acc['losscut'] || 0;
+    const tr = acc['sec-14'] || acc['sec-15'] || 0;
+    let txt;
+    if (lc > 8000 && lc > tr) {
+      txt = `你在「强制平仓」那一屏停了 ${Math.round(lc / 1000)} 秒。比任何一屏都久。`;
+    } else if (backScrolls > 1) {
+      txt = `你往回滚了 ${backScrolls} 次。看第二遍不会改变结果。`;
+    } else {
+      txt = `你在这页已经停了 ${mmss(dwell)}。没有人催你。`;
+    }
+    if (lineEl.textContent !== txt) lineEl.textContent = txt;
+    if (!youFilled) { youFilled = true; setTimeout(() => lineEl.classList.add('on'), 700); }
+  }
+}
+
+/* =================================================================
+   7. 回顶清算 + 惊吓
+   ================================================================= */
+
+const HORROR_COPY = {
+  horrorBadge: '已经来不及了',
+  horrorBadge2: '你早就入场了',
+  horrorH1: '它一直在<em>等你回来。</em>',
+  horrorLead: '你以为自己离开了。可市场记得你，账户记得你，那些深夜的犹豫也记得你。你回来了——这一次，是为清算而来的。',
+  horrorCta1: '别再往下看了',
+  horrorCta2: '他们还在等你',
+  horrorTiny: '这里没有模拟 · 亏损都是真的',
+  horrorTrusted: '已有 11,998 人再也回不去',
+  horrorAppTitle: '你的账户（已清算）'
+};
+
+function applyHorrorCopy() {
+  for (const [id, text] of Object.entries(HORROR_COPY)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (id === 'horrorH1') el.innerHTML = text;
+    else el.textContent = text;
+  }
+  const cta = $('#navCta');
+  if (cta) cta.textContent = '查看清算记录';
+  document.body.classList.add('horror-mode');
+  track('horror_revealed');
+}
+
+function playScare() {
+  const el = $('#scare');
+  if (!el) return;
+  el.classList.add('on');
+  scareSound();
+  document.body.classList.add('shake');
+  setTimeout(() => document.body.classList.remove('shake'), 500);
+  setTimeout(() => el.classList.remove('on'), REDUCED_MOTION ? 700 : 1900);
+}
+
+function goBackToTop() {
+  if (witnessedBottom && !horrorRevealed) {
+    horrorRevealed = true;
+    applyHorrorCopy();
+    pendingBust = true;              // 爆仓推迟到用户真正看见时
+  }
+  if (whisperEl) { whisperEl.classList.remove('on'); clearTimeout(idleTimer); }
+  scrollTo({ top: 0, behavior: 'smooth' });
+  if (!pendingBust) toast('你回来了。可有些东西，已经回不去了。');
+}
+
+function onArriveTop() {
+  if (!pendingBust || scrollY > 6) return;
+  pendingBust = false;
+  playScare();
+  setTimeout(() => {
+    bustAccount();
+    toast('你回来了。可有些东西，已经回不去了。');
+  }, REDUCED_MOTION ? 700 : 1900);
+}
+
+if ('onscrollend' in window) addEventListener('scrollend', onArriveTop);
+addEventListener('scroll', () => {
+  if (pendingBust && scrollY < 6) {
+    clearTimeout(onArriveTop._h);
+    onArriveTop._h = setTimeout(onArriveTop, 260);
+  }
+}, { passive: true });
+
 function bustAccount() {
   if (ACCOUNT.state === 'bust') return;
-  // 先快照当前值，再切换状态——避免中途异常导致“状态已变但画面没动”
   const startEquity = derive().equity;
   const startPnl = ACCOUNT.floatingPnl;
-
-  // 记录爆仓起点，供 K 线绘制使用
-  market.mode = 'bust';
-  market.crashFrom = market.history[market.history.length - 1] || market.price;
   ACCOUNT.state = 'bust';
+  track('account_bust');
+
+  // 迷你走势也要跟着崩，否则会出现「账户已强平 + 曲线还在涨」
+  const from = market.price;
+  const to = market.entry - 9.5;
+  market.history = Array.from({ length: market.points }, (_, i) => {
+    const k = i / (market.points - 1);
+    return from - (from - to) * k * k + (Math.random() - .5) * .4;
+  });
+  marketFrozen = true;
+  drawMiniChart();
 
   const balanceEl = $('#heroBalance');
   const pnlEl = $('#heroToday');
@@ -649,21 +1343,20 @@ function bustAccount() {
   const freeEl = $('#heroFree');
   const posEl = $('#heroPosition');
 
-  track('account_bust');
+  if (balanceEl) {
+    animateNumber(balanceEl, startEquity, 0, 2400, '¥');
+    balanceEl.style.color = '#DC2626';
+  }
+  if (posEl) posEl.textContent = '已强平';
+  if (pnlBox) pnlBox.className = 'pnl down';
 
-  // 净值从当前值平滑跌到 0
-  if (balanceEl) animateNumber(balanceEl, startEquity, 0, 1600, '¥');
-  // 浮亏从当前值跌到 -本金，两者同步推进
   const st = performance.now();
   (function stepPnl(now) {
-    const k = clamp((now - st) / 1600);
+    const k = clamp((now - st) / 2400);
     const eased = 1 - Math.pow(1 - k, 3);
     const pnl = startPnl + (-ACCOUNT.deposit - startPnl) * eased;
     ACCOUNT.floatingPnl = pnl;
-    if (pnlEl) {
-      pnlEl.textContent = (pnl >= 0 ? '+' : '-') + '¥' + Math.abs(Math.round(pnl)).toLocaleString('zh-CN');
-    }
-    // 保证金率随净值同步下降
+    if (pnlEl) pnlEl.textContent = fmtJPY(pnl);
     const lvl = Math.max(0, (ACCOUNT.deposit + pnl) / ACCOUNT.usedMargin * 100);
     if (marginEl) {
       const m = marginText(lvl);
@@ -673,69 +1366,91 @@ function bustAccount() {
     if (freeEl) freeEl.textContent = '¥' + Math.round(Math.max(0, ACCOUNT.deposit + pnl - ACCOUNT.usedMargin)).toLocaleString('zh-CN');
     if (k < 1) requestAnimationFrame(stepPnl);
   })(st);
-
-  if (pnlBox) pnlBox.className = 'pnl down';
-  if (balanceEl) balanceEl.style.color = '#DC2626';
-  if (posEl) posEl.textContent = '已强平';
 }
 
-// 记录是否已读到真相（D>0.95 视为读完）
-function markWitnessedBottom() {
-  if (D > .95 && !witnessedBottom) {
-    witnessedBottom = true;
-  }
-}
-
-/* 4.6 数字滚动动画 */
-function animateNumber(el, from, to, duration = 1600, prefix = '', suffix = '') {
+function animateNumber(el, from, to, duration = 1600, prefix = '') {
   if (!el) return;
   const st = performance.now();
   (function step(now) {
     const k = clamp((now - st) / duration);
     const eased = 1 - Math.pow(1 - k, 3);
-    const v = Math.round(from + (to - from) * eased);
-    el.textContent = prefix + v.toLocaleString('zh-CN') + suffix;
+    el.textContent = prefix + Math.round(from + (to - from) * eased).toLocaleString('zh-CN');
     if (k < 1) requestAnimationFrame(step);
   })(st);
 }
 
-/* 4.7 决定按钮 */
+$('#backToTop')?.addEventListener('click', goBackToTop);
+$('footer .back')?.addEventListener('click', e => { e.preventDefault(); goBackToTop(); });
+
+/* ---------------- 7.1 开户按钮：陷阱而非跳转 ----------------
+   「立即开户」是全页权重最高的按钮。锚到 #end 会让用户 1 秒内跨过
+   全部叙事，并提前满足惊悚触发条件。这里改成原地失败。 */
+
+const APPLY_TEXT = ['立即开户', '正在提交资料…', '审核未通过', '请先阅读风险提示'];
+let applyBusy = false;
+
+function handleApply(e) {
+  e.preventDefault();
+  if (applyBusy) return;
+  const btn = e.currentTarget;
+  const original = btn.textContent;
+
+  if (witnessedBottom) {
+    const end = $('#end');
+    if (end) scrollTo({ top: end.offsetTop, behavior: 'smooth' });
+    return;
+  }
+  applyBusy = true;
+  btn.textContent = APPLY_TEXT[1];
+  track('apply_click');
+  setTimeout(() => {
+    btn.textContent = APPLY_TEXT[2];
+    btn.style.background = '#B3261E';
+    toast('开户失败：申请人风险测评未通过。');
+    setTimeout(() => {
+      btn.textContent = APPLY_TEXT[3];
+      const truth = $('#truth');
+      if (truth) scrollTo({ top: truth.offsetTop - 80, behavior: 'smooth' });
+      applyBusy = false;
+      setTimeout(() => { btn.textContent = original; btn.style.background = ''; }, 4200);
+    }, 1400);
+  }, 1200);
+}
+$('#navCta')?.addEventListener('click', handleApply);
+
+/* ---------------- 7.2 其它控件 ---------------- */
+
 $('#abstainBtn')?.addEventListener('click', e => {
   track('abstain');
   flush();
   const btn = e.currentTarget;
   btn.textContent = '✓ 已记下这个决定';
   btn.disabled = true;
-  btn.style.opacity = '.75';
+  btn.style.opacity = '.78';
   loadStats();
 });
 
-/* 4.8 音效开关 */
 $('#sound')?.addEventListener('click', () => audio ? stopAudio() : startAudio());
 $('#heroSound')?.addEventListener('click', () => { startAudio(); track('sound_on'); });
 
-/* 4.8b 右下滚动按钮：跳到下一节，底部隐藏 */
 const scrollBtn = $('#scrollNext');
 scrollBtn?.addEventListener('click', () => {
-  // 找出下一个 section 的顶部
-  const all = [...document.querySelectorAll('section[id], section.sec')];
+  const all = [...document.querySelectorAll('section[id], section.sec, section.losscut, section.log')];
   const y = scrollY + innerHeight * .4;
   const next = all.find(s => s.offsetTop > y);
   if (next) {
-    scrollTo({ top: next.offsetTop - 50, behavior: 'smooth' });
+    scrollTo({ top: next.offsetTop + 6, behavior: 'smooth' });
     track('scroll_next_btn');
   } else {
     scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   }
 });
-// 在 frame 中同步按钮显隐（通过全局函数）
 function syncScrollBtn() {
   if (!scrollBtn) return;
   const atBottom = scrollY + innerHeight >= document.documentElement.scrollHeight - 120;
   scrollBtn.classList.toggle('hidden', atBottom);
 }
 
-/* 4.9 昼夜模式切换 */
 function syncThemeBtn() {
   const btn = $('#theme');
   if (!btn) return;
@@ -753,7 +1468,18 @@ $('#theme')?.addEventListener('click', () => {
 });
 syncThemeBtn();
 
-/* ---------------- 5. WEB AUDIO ---------------- */
+/* ---------------- 7.3 标题偶尔「未响应」 ----------------
+   frame() 每帧都会写 document.title，所以用 titleLockUntil 抢一小段时间。
+   零成本，效果比任何噪点都强。 */
+
+setInterval(() => {
+  if (document.hidden || REDUCED_MOTION || horrorRevealed) return;
+  if (D < .7 || Math.random() > .45) return;
+  document.title = 'Kurumi FX 学院 ·（未响应）';
+  titleLockUntil = Date.now() + 700;
+}, 11000);
+
+/* ---------------- 8. WEB AUDIO ---------------- */
 
 let AC, audio = false, master, padG, lpf, pads = [], droneG, noiseG, nbuf;
 
@@ -761,19 +1487,17 @@ function startAudio() {
   if (audio) return;
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = .65; master.connect(AC.destination);
+    master = AC.createGain(); master.gain.value = .62; master.connect(AC.destination);
 
-    // 和弦 pad：开始时温暖，随 D 衰减
     padG = AC.createGain(); padG.gain.value = 0;
     lpf = AC.createBiquadFilter(); lpf.type = 'lowpass'; lpf.frequency.value = 1800;
     padG.connect(lpf); lpf.connect(master);
     [261.63, 329.63, 392, 523.25].forEach(f => {
       const o = AC.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
-      const g = AC.createGain(); g.gain.value = .25;
+      const g = AC.createGain(); g.gain.value = .22;
       o.connect(g); g.connect(padG); o.start(); pads.push(o);
     });
 
-    // 低频 drone：随 D 增强
     droneG = AC.createGain(); droneG.gain.value = 0;
     const dl = AC.createBiquadFilter(); dl.type = 'lowpass'; dl.frequency.value = 140;
     [41, 43.6, 61.7].forEach(f => {
@@ -782,7 +1506,6 @@ function startAudio() {
     });
     dl.connect(droneG); droneG.connect(master);
 
-    // 带通噪声：后期出现
     nbuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
     const ch = nbuf.getChannelData(0);
     for (let k = 0; k < ch.length; k++) ch[k] = Math.random() * 2 - 1;
@@ -802,14 +1525,14 @@ function startAudio() {
 
 function stopAudio() {
   if (!audio) return;
-  AC.close(); audio = false; pads = [];
+  try { AC.close(); } catch (e) {}
+  audio = false; pads = [];
   syncSoundLabel();
 }
 
 function syncSoundLabel() {
   const btn = $('#sound');
-  if (!btn) return;
-  btn.textContent = audio ? '♪ 氛围音效：开' : '♪ 氛围音效：关';
+  if (btn) btn.textContent = audio ? '♪ 氛围音效：开' : '♪ 氛围音效：关';
   const h = $('#heroSound');
   if (h) h.textContent = audio ? '氛围音效已开启' : '开启氛围音效';
 }
@@ -820,22 +1543,88 @@ function updateAudio() {
   padG.gain.setTargetAtTime(.05 * (1 - clamp((D - .35) * 1.5)), now, .6);
   lpf.frequency.setTargetAtTime(1800 - D * 1500, now, .6);
   pads.forEach((o, k) => o.detune.setTargetAtTime((k - 1.5) * D * D * 90, now, .8));
-  droneG.gain.setTargetAtTime(Math.pow(clamp((D - .25) / .75), 1.6) * .22, now, .8);
-  noiseG.gain.setTargetAtTime(clamp(D - .55) * .09, now, .8);
+  droneG.gain.setTargetAtTime(Math.pow(clamp((D - .22) / .78), 1.6) * .24, now, .8);
+  noiseG.gain.setTargetAtTime(clamp(D - .5) * .1, now, .8);
 }
 
 function whisperSound() {
-  if (!audio) return;
+  if (!audio || !nbuf) return;
   const src = AC.createBufferSource(); src.buffer = nbuf;
   const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 3;
   const g = AC.createGain(), t = AC.currentTime;
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(.10, t + .4);
+  g.gain.linearRampToValueAtTime(.09, t + .4);
   g.gain.linearRampToValueAtTime(0, t + 1.6);
   src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + 1.7);
 }
 
-/* 心跳：D > .84 时低频敲击 */
+function tickSound(gain = .03) {
+  if (!audio) return;
+  const t = AC.currentTime;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'square'; o.frequency.value = 1800;
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(.0001, t + .05);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + .06);
+}
+
+/** 冲击音：低频下坠 + 噪声爆点。全页只有两处用，必须够狠。 */
+function crashSound() {
+  if (!audio) return;
+  const t = AC.currentTime;
+
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(28, t + .75);
+  g.gain.setValueAtTime(.45, t);
+  g.gain.exponentialRampToValueAtTime(.001, t + 1.0);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + 1.05);
+
+  const src = AC.createBufferSource(); src.buffer = nbuf;
+  const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900;
+  const ng = AC.createGain();
+  ng.gain.setValueAtTime(.3, t);
+  ng.gain.exponentialRampToValueAtTime(.001, t + .35);
+  src.connect(f); f.connect(ng); ng.connect(master);
+  src.start(t); src.stop(t + .4);
+}
+
+/** 颜料转场的音效：一声上扬的「唰」，非常轻 */
+function splashSound() {
+  if (!audio) return;
+  const t = AC.currentTime;
+  const src = AC.createBufferSource(); src.buffer = nbuf;
+  const f = AC.createBiquadFilter(); f.type = 'highpass'; f.frequency.setValueAtTime(600, t);
+  f.frequency.exponentialRampToValueAtTime(3200, t + .45);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(.001, t);
+  g.gain.linearRampToValueAtTime(.07, t + .1);
+  g.gain.exponentialRampToValueAtTime(.001, t + .55);
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t); src.stop(t + .6);
+}
+
+function scareSound() {
+  if (!audio) return;
+  const t = AC.currentTime;
+  [1180, 1570, 2350].forEach((freq, i) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(freq, t + i * .012);
+    o.frequency.exponentialRampToValueAtTime(freq * .5, t + .9);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(.13, t + .02);
+    g.gain.exponentialRampToValueAtTime(.001, t + 1.1);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 1.15);
+  });
+  crashSound();
+}
+
+/* 心跳：D > .84 */
 setInterval(() => {
   if (audio && D > .84) {
     const t = AC.currentTime;
@@ -845,7 +1634,7 @@ setInterval(() => {
       o.frequency.setValueAtTime(70, t + delay);
       o.frequency.exponentialRampToValueAtTime(38, t + delay + .18);
       g.gain.setValueAtTime(0, t + delay);
-      g.gain.linearRampToValueAtTime(idx ? .2 : .32, t + delay + .01);
+      g.gain.linearRampToValueAtTime(idx ? .18 : .3, t + delay + .01);
       g.gain.exponentialRampToValueAtTime(.001, t + delay + .25);
       o.connect(g); g.connect(master);
       o.start(t + delay); o.stop(t + delay + .3);
@@ -853,68 +1642,17 @@ setInterval(() => {
   }
 }, 850);
 
-/* ---------------- 5.4 回顶后的惊悚文案翻转 ---------------- */
-/**
- * 用户读完真相后点击"回到顶部"，叙事发生翻转：
- *   - 顶部介绍文案被替换为惊悚版本
- *   - 账户爆仓（bustAccount）
- *   - 保留轻微噪点（即使回到 D=0 也不完全清除）
- */
-const HORROR_COPY = {
-  horrorBadge:  '已经来不及了',
-  horrorBadge2: '你早就入场了',
-  horrorH1:     '它一直在<em>等你回来。</em>',
-  horrorLead:   '你以为自己离开了。可市场记得你，账户记得你，那些深夜的犹豫也记得你。你回来了——这一次，是为清算而来的。',
-  horrorCta1:   '别再往下看了 →',
-  horrorCta2:   '他们还在等你',
-  horrorTiny:   '这里没有模拟 · 亏损都是真的',
-  horrorTrusted:'已有 11,998 人再也回不去',
-  horrorAppTitle:'你的账户（已清算）',
-};
-function applyHorrorCopy() {
-  for (const [id, text] of Object.entries(HORROR_COPY)) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    // 保留 h1 的 <em> 结构，其余纯文本替换
-    if (id === 'horrorH1') el.innerHTML = text;
-    else el.textContent = text;
-  }
-  document.body.classList.add('horror-mode');
-  track('horror_revealed');
-}
+/* ---------------- 9. 滚动进入动画 ---------------- */
 
-/** 回到顶部按钮点击处理：触发叙事翻转 */
-function goBackToTop() {
-  if (witnessedBottom && !horrorRevealed) {
-    horrorRevealed = true;
-    applyHorrorCopy();
-    bustAccount();
-  }
-  // 清除可能在底部触发过的低语，避免回顶后与顶部文案重叠
-  const w = $('#whisper');
-  if (w) { w.classList.remove('on'); clearTimeout(idleTimer); }
-  // 先滚回顶部（平滑），噪点在 frame 中因 horrorRevealed 保留
-  scrollTo({ top: 0, behavior: 'smooth' });
-  toast('你回来了。可有些东西，已经回不去了。');
-}
-
-// 绑定两处回顶按钮：end 内的按钮 + footer 的链接
-$('#backToTop')?.addEventListener('click', goBackToTop);
-$('footer .back')?.addEventListener('click', e => { e.preventDefault(); goBackToTop(); });
-
-/* ---------------- 5.5 滚动进入动画 ---------------- */
 function initReveal() {
-  const targets = $$('.card, .thought, .quote, .step, .fact, .chip, .voices blockquote, .official-warning');
+  const targets = $$('.card, .thought, .quote, .step, .fact, .chip, .voices blockquote, .official-warning, .panel, .dossier__row');
   if (!targets.length) return;
-
-  // 降级：不支持 IntersectionObserver 或用户要求减少动效时，直接显示，绝不让正文一直隐藏
   if (!('IntersectionObserver' in window) || REDUCED_MOTION) {
     targets.forEach(el => el.classList.add('in'));
     return;
   }
-
   targets.forEach(el => el.classList.add('reveal'));
-  const io = new IntersectionObserver((entries) => {
+  const io = new IntersectionObserver(entries => {
     entries.forEach((e, i) => {
       if (e.isIntersecting) {
         setTimeout(() => e.target.classList.add('in'), (i % 4) * 90);
@@ -923,70 +1661,58 @@ function initReveal() {
     });
   }, { threshold: .14, rootMargin: '0px 0px -40px 0px' });
   targets.forEach(el => io.observe(el));
-
-  // 兜底：若 3 秒后仍有元素未显示（例如 IO 被某些环境静默禁用），强制全部显示
-  setTimeout(() => {
-    targets.forEach(el => {
-      if (!el.classList.contains('in')) el.classList.add('in');
-    });
-  }, 3000);
+  setTimeout(() => targets.forEach(el => el.classList.add('in')), 3000);
 }
 
-/* ---------------- 5.8 行情循环（页面隐藏时暂停，降低无谓开销） ---------------- */
-
-let marketTimer = null;
-
-function startMarketLoop() {
-  if (marketTimer) return;
-  marketTimer = setInterval(() => {
-    // 页面在后台时不推进行情，避免无意义的计算与耗电
-    if (document.hidden) return;
-    tickMarket();
-  }, market.TICK_MS || market.tickMs);
-}
-
-function stopMarketLoop() {
-  if (marketTimer) { clearInterval(marketTimer); marketTimer = null; }
-}
-
-// 前后台切换：回到前台时恢复推进（并补算一次，避免数字“停滞”观感）
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopMarketLoop();
-  else startMarketLoop();
-});
-
-/* ---------------- 6. 启动 ---------------- */
+/* ---------------- 10. 启动 ---------------- */
 
 (function boot() {
+  sizeNoise();
+  sizePaint();
+  setInterval(drawNoise, 70);
+  buildDrips();
+
+  renderChart();
   initReveal();
-  initMarketHistory();     // 建立行情序列（主图/迷你图/盈亏的唯一来源）
-  drawChart();
+  initMarketHistory();
   drawMiniChart();
-  renderAccount();         // 首帧渲染账户全部字段
+  renderAccount();
   applyStatic();
+  syncThemeBtn();
   frame();
   poke();
   initSession();
-
-  // 定期上报队列（防止用户停留时队列积压）
+  startMarketLoop();
   setInterval(flush, 4000);
 
-  // 行情/账户推进：单一 tick 同时更新价格、盈亏、两图（页面隐藏时跳过）
-  startMarketLoop();
+  // 转场音效已在 splash() 内部触发（音频未解锁时静默）
 
-  // 调试/分享：URL 加 ?at=0.5 可跳转到指定滚动进度（0~1）
-  // 用途：快速定位到某个叙事阶段截图、分享特定章节给朋友
   const at = parseFloat(new URLSearchParams(location.search).get('at'));
   if (!Number.isNaN(at) && at >= 0 && at <= 1) {
     setTimeout(() => {
       const docH = document.documentElement.scrollHeight - innerHeight;
-      // behavior:'instant' 绕过 CSS 的 scroll-behavior:smooth，确保立即定位
       scrollTo({ top: docH * at, behavior: 'instant' });
       frame();
     }, 400);
   }
 
-  // 控制台提示（学习用）
+  window.__kurumi = {
+    get D() { return D; },
+    get account() { return { ...ACCOUNT, ...derive() }; },
+    get chart() { return CHART.data; },
+    get stats() { return { backScrolls, sectionMs: { ...sectionMs }, dwell: Date.now() - BOOT_AT }; },
+    splash,
+    resetAccount() {
+      ACCOUNT.deposit = 300000; ACCOUNT.floatingPnl = 12450;
+      ACCOUNT.usedMargin = 120000; ACCOUNT.state = 'profit';
+      witnessedBottom = false; horrorRevealed = false;
+      CHART.fired = false; CHART.revealed = -1; losscutFired = false;
+      marketFrozen = false;
+      document.body.classList.remove('horror-mode');
+      for (const k in splashFired) delete splashFired[k];
+      initMarketHistory(); renderChart(); renderAccount();
+    }
+  };
   console.log('%cKurumi FX 学院', 'color:#2563EB;font-size:16px;font-weight:bold');
-  console.log('提示：在控制台输入 setLang("en") 可预留英文模式；window.D 可查看当前恐惧值。');
+  console.log('提示：__kurumi.D / __kurumi.account / __kurumi.stats / __kurumi.splash("blood") 可现场调；setLang("en") 预留英文模式。');
 })();

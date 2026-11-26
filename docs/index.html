@@ -3,30 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F8FAFC">
 <meta name="description" content="《FX战士久留美》同人劝导网页 —— 用你喜欢的动画，告诉你 FX 赌博的真相。">
+<meta property="og:title" content="Kurumi FX 学院 · 轻松赚回 2000 万">
+<meta property="og:description" content="零基础入门 · 25 倍杠杆 · 24 小时交易。30 万本金，轻松赚回 2000 万。">
+<meta property="og:type" content="website">
 <title>Kurumi FX 学院 · 轻松赚回 2000 万</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800;900&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563EB'/%3E%3Cpath d='M5 22 12 14l5 4 10-11' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ========== 全局覆盖层（视觉异化） ========== -->
-<!-- 右侧装饰：刻度边框（保留）+ 下一页按钮 -->
-<div class="frame-rail" aria-hidden="true">
-  <div class="frame-rail__ticks"></div>
-</div>
+<!-- ========== 全局覆盖层 ========== -->
+<div class="frame-rail" aria-hidden="true"><div class="frame-rail__ticks"></div></div>
 <button id="scrollNext" type="button" class="scroll-next" aria-label="下一页">
   <span class="scroll-next__label">下一页</span>
   <span class="scroll-next__arrow">↓</span>
 </button>
 
-<canvas id="noise" width="320" height="180"></canvas>
-<div id="vig"></div>
-<div id="scan"></div>
-<div id="whisper"></div>
-<div id="toast"></div>
+<canvas id="noise" width="320" height="180" aria-hidden="true"></canvas>
+<canvas id="paint" aria-hidden="true"></canvas>
+<div id="vig" aria-hidden="true"></div>
+<div id="scan" aria-hidden="true"></div>
+<div id="whisper" aria-live="polite"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <button id="sound" type="button" data-i18n="sound.off">♪ 氛围音效：关</button>
 <button id="theme" type="button" aria-label="切换昼夜模式">☾ 夜间</button>
 
@@ -43,9 +43,9 @@
     <ul>
       <li><a href="#features" data-i18n="nav.features">课程特色</a></li>
       <li><a href="#success" data-i18n="nav.success">学员故事</a></li>
-      <li><a href="#truth" data-i18n="nav.truth">关于风险</a></li>
+      <li><a href="#teacher" data-i18n="nav.teacher">关于讲师</a></li>
     </ul>
-    <a href="#end" class="btn" data-i18n="nav.cta">立即开户</a>
+    <a href="#apply" class="btn" id="navCta" data-i18n="nav.cta">立即开户</a>
   </div>
 </nav>
 
@@ -55,27 +55,33 @@
 <section id="top" class="hero" data-bg="#F8FAFC" data-fg="#0F172A" data-ac="#2563EB" data-d="0">
   <div class="wrap hero-grid">
     <div class="hero-copy">
-      <div class="pill"><b data-i18n="hero.badge" id="horrorBadge">新课</b><span data-i18n="hero.badge2" id="horrorBadge2">零基础入门 · 限时免费</span></div>
-      <h1 data-i18n-html="hero.h1" id="horrorH1">30 万本金，<em>轻松赚回 2000 万。</em></h1>
-      <p class="lead" data-i18n="hero.lead" id="horrorLead">Kurumi FX 学院带你从零开始，掌握外汇保证金交易。专业课程、实时指导、社群陪伴——让你的每一笔交易都有底气。</p>
+      <div class="pill"><b data-i18n="hero.badge">新课</b><span data-i18n="hero.badge2">零基础入门 · 限时免费</span></div>
+      <h1 data-i18n-html="hero.h1" id="horrorH1">30 万本金，<br><em>轻松赚回 2000 万。</em></h1>
+      <p class="lead" data-i18n="hero.lead" id="horrorLead">从零开始掌握外汇保证金交易。专业课程、实时指导、社群陪伴——让你的每一笔交易都有底气。</p>
       <div class="ctas">
         <a href="#features" class="btn" data-i18n="hero.cta1" id="horrorCta1">免费试学 →</a>
         <a href="#success" class="btn ghost" data-i18n="hero.cta2" id="horrorCta2">看看学员故事</a>
       </div>
+      <figure class="sensei">
+        <img src="assets/face-happy.webp" alt="福贺久留美，课程讲师" width="280" height="248" loading="eager">
+        <figcaption>
+          <b>讲师 · 福贺久留美</b>
+          <span>20 岁 · 交易经验 8 个月 · 累计收益 +640 万</span>
+        </figcaption>
+      </figure>
       <p class="tiny"><span data-i18n="hero.tiny1" id="horrorTiny">模拟交易零风险 · 真实收益不保证</span><button type="button" id="heroSound" data-i18n="hero.sound">开启氛围音效</button></p>
     </div>
 
-    <!-- 模拟交易 App 界面 -->
     <div class="device" aria-label="模拟交易界面">
       <div class="phone-mock">
         <div class="app-head"><span data-i18n="app.title" id="horrorAppTitle">我的账户</span><span class="dot">●</span></div>
         <div class="balance"><small data-i18n="app.equity">账户净值</small><strong id="heroBalance">¥300,000</strong></div>
         <div class="pnl up" id="heroTodayBox"><span data-i18n="app.today">今日盈亏</span><strong id="heroToday">+¥12,450</strong></div>
         <div class="mini-chart" id="heroChart" aria-hidden="true"></div>
-        <div class="app-row"><span data-i18n="app.position">当前持仓</span><b id="heroPosition">USD/JPY ×50</b></div>
-        <div class="app-row"><span data-i18n="app.leverage">杠杆</span><b class="accent">50×</b></div>
+        <div class="app-row"><span data-i18n="app.position">当前持仓</span><b id="heroPosition">USD/JPY 50,000</b></div>
+        <div class="app-row"><span data-i18n="app.leverage">杠杆</span><b class="accent">25×</b></div>
         <div class="app-row"><span data-i18n="app.margin">保证金率</span><b class="ok" id="heroMargin">充足</b></div>
-        <div class="app-row"><span data-i18n="app.freeMargin">可用保证金</span><b id="heroFree">¥253,450</b></div>
+        <div class="app-row"><span data-i18n="app.freeMargin">可用保证金</span><b id="heroFree">¥252,450</b></div>
       </div>
     </div>
   </div>
@@ -101,38 +107,39 @@
       </article>
       <article class="card twitch">
         <div class="ico">↗</div>
-        <h3 data-i18n="features.c2t">最高 50 倍杠杆</h3>
-        <p data-i18n="features.c2p">1 万本金撬动 50 万仓位。行情波动 2%，你的收益就是 100%。</p>
+        <h3 data-i18n="features.c2t">最高 25 倍杠杆</h3>
+        <p data-i18n="features.c2p">1 万本金撬动 25 万仓位。行情波动 4%，你的收益就是 100%。</p>
       </article>
       <article class="card twitch">
         <div class="ico">◷</div>
         <h3 data-i18n="features.c3t">24 小时交易</h3>
-        <p data-i18n="features.c3p">白天上班，晚上交易。市场永不眠，机会随时都在。</p>
+        <p data-i18n="features.c3p">白天上班，晚上交易。市场永不眠。你也不必。</p>
       </article>
     </div>
   </div>
 </section>
 
-<!-- ========== 03 LEVERAGE · d=0.1 ========== -->
-<section class="sec" data-bg="#EDF4FC" data-fg="#0F172A" data-ac="#1D4ED8" data-d="0.1">
+<!-- ========== 03 LEVERAGE · d=0.10 ========== -->
+<section class="sec" data-bg="#EDF4FC" data-fg="#0F172A" data-ac="#1D4ED8" data-d="0.10">
   <div class="wrap split">
     <div>
       <div class="kicker" data-i18n="lev.kicker">杠杆的力量</div>
-      <h2 data-i18n-html="lev.h2">1 万本金<br>撬动 50 万仓位</h2>
+      <h2 data-i18n-html="lev.h2">1 万本金<br>撬动 25 万仓位</h2>
       <p class="lead" data-i18n="lev.lead">这就是外汇保证金交易的魅力。用更少的钱，抓住更大的机会。</p>
       <p class="note" data-i18n="lev.note">杠杆同时放大收益与亏损。请务必理解风险后再参与。</p>
+      <p class="aside-note" data-i18n-html="lev.aside">*日本个人客户的法定上限是 25 倍。海外业者可以给到 500 倍。<br>我们不推荐那些业者。我们只是告诉你它们存在。</p>
     </div>
     <div class="calc">
       <div class="calc-row"><span data-i18n="lev.capital">你的本金</span><b>¥10,000</b></div>
-      <div class="calc-arrow">× 50</div>
-      <div class="calc-row big"><span data-i18n="lev.position">控制仓位</span><b>¥500,000</b></div>
-      <div class="calc-note" data-i18n="lev.example">汇率只需波动 2%，你的本金就会翻倍——或者归零。</div>
+      <div class="calc-arrow">× 25</div>
+      <div class="calc-row big"><span data-i18n="lev.position">控制仓位</span><b>¥250,000</b></div>
+      <div class="calc-note" data-i18n="lev.example">汇率只需波动 4%，你的本金就会翻倍——或者归零。</div>
     </div>
   </div>
 </section>
 
-<!-- ========== 04 TOOLS · d=0.16 ========== -->
-<section class="sec" data-bg="#E6F0FB" data-fg="#0F172A" data-ac="#1E40AF" data-d="0.16">
+<!-- ========== 04 TOOLS · d=0.15 ========== -->
+<section class="sec" data-bg="#E9F1FC" data-fg="#0F172A" data-ac="#1E40AF" data-d="0.15">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tools.kicker">专业工具</div>
@@ -148,8 +155,8 @@
   </div>
 </section>
 
-<!-- ========== 05 SUCCESS · d=0.24 ========== -->
-<section id="success" class="sec" data-bg="#DFEAF7" data-fg="#0F172A" data-ac="#2563EB" data-d="0.24">
+<!-- ========== 05 SUCCESS · d=0.20 — 色彩最饱和的一屏，之后就是下坡 ========== -->
+<section id="success" class="sec" data-bg="#E2ECF9" data-fg="#0F172A" data-ac="#2563EB" data-d="0.20">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="success.kicker">学员故事</div>
@@ -158,25 +165,60 @@
     <div class="grid3">
       <article class="card quote twitch">
         <div class="stars">★★★★★</div>
-        <p data-i18n="success.q1">“跟着课程学了三个月，30 万变成了 80 万。刚开始真的不敢相信。”</p>
+        <p data-i18n="success.q1">「跟着课程学了三个月，30 万变成了 80 万。刚开始真的不敢相信。」</p>
         <div class="who"><span class="av">K</span><div><b data-i18n="success.n1">Kurumi 学员 · 东京</b><small data-i18n="success.d1">入金 30 万 · 当前 82.4 万</small></div></div>
       </article>
       <article class="card quote twitch">
         <div class="stars">★★★★★</div>
-        <p data-i18n="success.q2">“50 倍杠杆太爽了。一天赚的比我一个月工资还多。”</p>
+        <p data-i18n="success.q2">「25 倍杠杆太爽了。一天赚的比我一个月工资还多。」</p>
         <div class="who"><span class="av">M</span><div><b data-i18n="success.n2">M 学员 · 大阪</b><small data-i18n="success.d2">最爱 AUD/JPY</small></div></div>
       </article>
       <article class="card quote twitch">
         <div class="stars">★★★★★</div>
-        <p data-i18n="success.q3">“只要抓住一次行情，就能翻身。我离目标又近了一步。”</p>
+        <p data-i18n="success.q3">「只要抓住一次行情，就能翻身。我离目标又近了一步。」</p>
         <div class="who"><span class="av wrong">?</span><div><b data-i18n="success.n3">已注销学员</b><small data-i18n="success.d3">最后登录：未知</small></div></div>
+        <span class="updated" data-i18n="success.updated">最初评价 ★☆☆☆☆ · 已由学员本人更新</span>
       </article>
     </div>
   </div>
 </section>
 
-<!-- ========== 06 TIPS · d=0.32 ========== -->
-<section class="sec" data-bg="#E2EBF7" data-fg="#16213A" data-ac="#2563EB" data-d="0.32">
+<!-- ========== 06 TEACHER · d=0.26 — 第一个不对劲，但不解释 ========== -->
+<section id="teacher" class="sec kurumi-stage" data-bg="#E4E7F3" data-fg="#141A2E" data-ac="#3D53A8" data-d="0.26">
+  <div class="wrap">
+    <div class="teacher-grid">
+      <div>
+        <div class="kicker" data-i18n="teacher.kicker">课程讲师</div>
+        <p class="kurumi-quote glitch" data-text="老实赚钱，很枯燥吧？" data-i18n="teacher.quote">老实赚钱，很枯燥吧？</p>
+        <p class="kurumi-sub" data-i18n="teacher.sub">—— 福贺久留美，20 岁，Kurumi FX 学院创始人</p>
+        <p class="teacher-lead" data-i18n="teacher.lead">她说这句话的时候在笑。她说她只用了八个月，就把母亲留下的债还清了。</p>
+      </div>
+      <figure class="panel" id="kurumiPanel">
+        <img src="assets/face-happy.webp" alt="福贺久留美" width="280" height="248" loading="lazy" data-face="happy">
+        <figcaption data-i18n="teacher.cap">课程宣传照 · 2026 年 4 月</figcaption>
+      </figure>
+    </div>
+
+    <div class="dossier" id="dossier">
+      <div class="dossier__row twitch">
+        <span class="dossier__k">母亲</span>
+        <p>炒 FX 亏光 2000 万日元。<small>账户开在海外业者。杠杆 500 倍。</small></p>
+      </div>
+      <div class="dossier__row twitch">
+        <span class="dossier__k">久留美</span>
+        <p>那年 18 岁。她说她要「轻松赚回来」。<small>用 30 万本金，开始复仇。</small></p>
+      </div>
+      <div class="dossier__row twitch">
+        <span class="dossier__k">现在</span>
+        <p>她是本课程的讲师。<small>累计收益 +640 万。她说她快赚够了。</small></p>
+      </div>
+    </div>
+    <p class="teacher-close" data-i18n="teacher.close">我们没问那 2000 万是怎么亏光的。<br>她也没说。</p>
+  </div>
+</section>
+
+<!-- ========== 07 TIPS · d=0.34 ========== -->
+<section class="sec" data-bg="#DDE3F0" data-fg="#16213A" data-ac="#35509E" data-d="0.34">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tips.kicker">进阶课程</div>
@@ -187,11 +229,12 @@
       <div class="step"><div class="n">02</div><h3 data-i18n="tips.s2t">控制仓位</h3><p data-i18n="tips.s2p">永远不要投入超过你能承受损失的资金。这是理性。</p></div>
       <div class="step"><div class="n">03</div><h3 data-i18n="tips.s3t">及时止盈</h3><p data-i18n="tips.s3p">达到目标就落袋为安。贪心是交易最大的敌人。这是智慧。</p></div>
     </div>
+    <p class="center aside" data-i18n="tips.aside">以上三条，久留美全部违反。<br>她的课里也没提过。</p>
   </div>
 </section>
 
-<!-- ========== 07 MINDSET · d=0.40 ========== -->
-<section class="sec" data-bg="#D8E4F2" data-fg="#16213A" data-ac="#1D4ED8" data-d="0.40">
+<!-- ========== 08 MINDSET · d=0.42 ========== -->
+<section class="sec" data-bg="#D3D9E8" data-fg="#16213A" data-ac="#2C4A94" data-d="0.42">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="mindset.kicker">真实交易者心态</div>
@@ -199,83 +242,114 @@
       <p class="lead" data-i18n="mindset.lead">以下每一句话，都来自真实的交易日志。</p>
     </div>
     <div class="thoughts">
-      <div class="thought twitch"><span class="q">“</span><p data-i18n="mindset.q1">再等等，马上就会反弹的。</p><small data-i18n="mindset.a1">—— 未实现亏损 -¥42,000</small></div>
-      <div class="thought twitch"><span class="q">“</span><p data-i18n="mindset.q2">补一点仓，成本就降下来了。</p><small data-i18n="mindset.a2">—— 追加保证金 ¥300,000</small></div>
-      <div class="thought twitch"><span class="q">“</span><p data-i18n="mindset.q3">这次一定能回本，就最后一次。</p><small data-i18n="mindset.a3">—— 第 17 次「最后一次」</small></div>
+      <div class="thought twitch"><span class="q">「</span><p data-i18n="mindset.q1">再等等，马上就会反弹的。</p><small data-i18n="mindset.a1">—— 未实现亏损 -¥42,000 · 已持有 9 小时</small></div>
+      <div class="thought twitch"><span class="q">「</span><p data-i18n="mindset.q2">补一点仓，成本就降下来了。</p><small data-i18n="mindset.a2">—— 追加保证金 ¥300,000</small></div>
+      <div class="thought twitch"><span class="q">「</span><p data-i18n="mindset.q3">这次一定能回本，就最后一次。</p><small data-i18n="mindset.a3">—— 第 17 次「最后一次」</small></div>
     </div>
   </div>
 </section>
 
-<!-- ========== 08 CHART · d=0.48 ========== -->
-<section class="sec" data-bg="#CCD8E8" data-fg="#1A2436" data-ac="#23407A" data-d="0.48">
+<!-- ========== 09 NOTIFY · d=0.50 — 今晚，你的手机 ========== -->
+<section class="sec night" id="notify" data-bg="#1B2230" data-fg="#DCE3EE" data-ac="#5B87C9" data-d="0.50">
+  <div class="wrap center">
+    <div class="kicker" data-i18n="notify.kicker">今晚</div>
+    <h2 data-i18n="notify.h2">这些通知会准时送到</h2>
+    <p class="lead" data-i18n="notify.lead">顺序不会错，时间也不会错。你只需要维持仓位。</p>
+  </div>
+  <div class="notify-stage" id="notifyStage">
+    <div class="notify-phone">
+      <div class="np-time" id="npTime">--:--</div>
+      <div class="np-round" id="npDate">今晚 · 你的设备</div>
+      <div class="np-stack" id="npStack" aria-live="polite"></div>
+      <div class="np-hint" id="npHint">发送方：您的交易账户</div>
+    </div>
+    <p class="notify-count"><b id="npCount">0</b> / 5 条 · 你还没读完这一节</p>
+  </div>
+</section>
+
+<!-- ========== 10 CHART · d=0.58 ========== -->
+<section class="sec" id="chart" data-bg="#141A24" data-fg="#E2E8F0" data-ac="#3E6FA8" data-d="0.58">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="chart.kicker">行情回顾</div>
       <h2 data-i18n="chart.h2">一切看起来都很顺利</h2>
-      <p class="lead" data-i18n="chart.lead">直到那根 K 线出现。</p>
+      <p class="lead" data-i18n="chart.lead">直到 18:00 那根 K 线出现。</p>
     </div>
-    <div class="chart-panel twitch">
-      <div class="chart-hud"><span data-i18n="chart.pair">USD/JPY</span><span id="chartPnl" class="up">+¥124,500</span></div>
-      <div class="chart-canvas" id="bigChart" aria-label="USD/JPY 模拟行情：先上涨后暴跌，非真实数据"></div>
+    <div class="chart-panel">
+      <div class="chart-hud">
+        <span data-i18n="chart.pair">USD/JPY · 1H</span>
+        <span id="chartPnl" class="up">+¥124,500</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-canvas" id="bigChart" aria-label="USD/JPY 模拟行情：先上涨后暴跌，非真实数据"></div>
+        <div class="chart-price" id="chartPrice" aria-hidden="true"></div>
+      </div>
+      <div class="chart-axis" id="chartAxis" aria-hidden="true"></div>
       <div class="chart-legend" id="chartLegend"></div>
     </div>
   </div>
 </section>
 
-<!-- ========== 09 REALITY · d=0.56 ========== -->
-<section class="sec" data-bg="#C0CCDD" data-fg="#1A2436" data-ac="#2A3A66" data-d="0.56">
-  <div class="wrap split">
-    <div>
-      <div class="kicker" data-i18n="reality.kicker">强平通知</div>
-      <h2 data-i18n="reality.h2">保证金不足</h2>
-      <p class="lead" data-i18n="reality.lead">系统已按规则自动平仓。你的持仓全部清空。</p>
-      <div class="force-box">
-        <div class="force-row"><span data-i18n="reality.balance">账户余额</span><b id="realBalance">¥0</b></div>
-        <div class="force-row"><span data-i18n="reality.lost">累计亏损</span><b class="red" id="realLoss">-¥300,000</b></div>
-        <div class="force-row"><span data-i18n="reality.owes">是否追加保证金</span><b class="red" data-i18n="reality.yes">是</b></div>
-      </div>
-    </div>
-    <div class="warning-card twitch">
-      <div class="warn-icon">!</div>
-      <h3 data-i18n="reality.warnTitle">爆仓</h3>
-      <p data-i18n="reality.warnText">亏损可能超过你投入的保证金。<br>这不是假设，这是规则。</p>
+<!-- ========== 11 LOSSCUT · d=0.66 ========== -->
+<section class="losscut" id="losscut" data-bg="#06080C" data-fg="#E9E4DE" data-ac="#A81E2C" data-d="0.66">
+  <div class="losscut__trap" id="losscutTrap">
+    <img class="losscut__vortex" src="assets/vortex.webp" alt="" aria-hidden="true" width="1500" height="1377" loading="lazy">
+    <div class="drips" id="drips" aria-hidden="true"></div>
+    <img class="losscut__title" id="losscutTitle" src="assets/losscut-title.png" alt="强制平仓" width="1440" height="211" loading="lazy">
+    <img class="losscut__kurumi" id="losscutKurumi" src="assets/kurumi-fall.webp" alt="久留美被强制平仓，向后坠落" width="1000" height="918" loading="lazy">
+    <div class="losscut__blackout" id="losscutBlack"></div>
+    <div class="losscut__copy">
+      <p class="losscut__line" id="lsLine1">系统已按规则自动平仓。</p>
+      <p class="losscut__line" id="lsLine2">你的持仓全部清空。</p>
+      <p class="losscut__line small" id="lsLine3">未实现亏损 −¥300,000 · 追加保证金 ¥84,200 · 剩余 0</p>
     </div>
   </div>
 </section>
 
-<!-- ========== 10 VOICES · d=0.64 ========== -->
-<section class="sec" data-bg="#7A3A4A" data-fg="#F5E9EC" data-ac="#C85068" data-d="0.64">
+<!-- ========== 12 LOG · d=0.74 — 系统不会安慰你 ========== -->
+<section class="log" id="log" data-bg="#08070A" data-fg="#B8AD9F" data-ac="#A3140B" data-d="0.74">
+  <div class="log__stick">
+    <div class="term" id="term">
+      <div class="l">[kurumi-fx] 客户端 3.0.14 · 连接正常</div>
+      <div class="l">[account] 账户 <span class="dim">****-0182</span> · 入金 300,000</div>
+      <div class="l">[account] 杠杆 25× · 已用保证金 120,000</div>
+      <div class="l">[market] USD/JPY 155.02 · 点差 0.3</div>
+      <div class="l">[position] 建仓 154.80 · 50,000 通貨</div>
+      <div class="l">[risk] 保证金维持率 260% · 状态 正常</div>
+      <div class="l warn">[risk] 保证金维持率 186% · 状态 注意</div>
+      <div class="l warn">[risk] 保证金维持率 104% · 状态 危险</div>
+      <div class="l red">[risk] 保证金维持率 96% · 低于警戒线</div>
+      <div class="l red">[margin] 发出追证通知：¥84,200</div>
+      <div class="l red">[margin] 追证未入金 · 剩余 00:00:47</div>
+      <div class="l red">[losscut] 执行强制平仓 · 市价成交</div>
+      <div class="l red">[account] 余额 0 · 结算完成</div>
+      <div class="l red big">[account] 下一次入金，随时欢迎。</div>
+      <span class="cursor" aria-hidden="true"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 13 YOU · d=0.82 — 本页一直在数 ========== -->
+<section class="sec you" id="you" data-bg="#100A0E" data-fg="#DCD3D3" data-ac="#8C1220" data-d="0.82">
   <div class="wrap">
     <div class="center">
-      <div class="kicker" data-i18n="voices.kicker">交易者心声</div>
-      <h2 data-i18n="voices.h2">停不下来的，不是行情</h2>
+      <div class="kicker" data-i18n="you.kicker">你的记录</div>
+      <h2 data-i18n="you.h2">本页一直在数</h2>
     </div>
-    <div class="voices">
-      <blockquote data-i18n="voices.q1">“我把父亲攒的 300 万也投进去了。我想翻本，翻了本就收手。”</blockquote>
-      <blockquote data-i18n="voices.q2">“每次下单前我都说这是最后一次。可 K 线一动，我就忘了。”</blockquote>
-      <blockquote data-i18n="voices.q3">“赚的时候觉得自己是天才，亏的时候才知道——市场根本不认识我。”</blockquote>
+    <div class="readout" id="readout">
+      <div class="readout__row"><span>会话</span><b id="youSession">—</b></div>
+      <div class="readout__row"><span>本地时间</span><b id="youClock">—</b></div>
+      <div class="readout__row"><span>停留时长</span><b id="youDwell">—</b></div>
+      <div class="readout__row"><span>往回滚</span><b id="youBack">—</b></div>
+      <div class="readout__row"><span>停留最久的一屏</span><b id="youLongest">—</b></div>
     </div>
+    <p class="you-line" id="youLine">你比看「真相」那一屏多花了 32 秒。</p>
+    <p class="you-note" data-i18n="you.note">以上数据只保存在你的浏览器里。<br><b>暂时。</b></p>
   </div>
 </section>
 
-<!-- ========== 11 KURUMI · d=0.72 ========== -->
-<section class="sec kurumi-stage" data-bg="#4A1E2A" data-fg="#F5E9EC" data-ac="#C23A54" data-d="0.72">
-  <div class="wrap center">
-    <div class="kicker" data-i18n="kurumi.kicker">久留美说的话</div>
-    <p class="kurumi-quote glitch" data-text="老实赚钱，很枯燥吧？" data-i18n="kurumi.quote">老实赚钱，很枯燥吧？</p>
-    <p class="kurumi-sub" data-i18n="kurumi.sub">—— 福贺久留美，20 岁，用 30 万本金开始了她的「复仇」</p>
-    <div class="story-chain">
-      <div><b data-i18n="chain.y1">母亲</b><span data-i18n="chain.d1">炒 FX 亏光 2000 万日元后自杀</span></div>
-      <div class="chain-arrow">↓</div>
-      <div><b data-i18n="chain.y2">久留美</b><span data-i18n="chain.d2">发誓要「轻松赚回来」</span></div>
-      <div class="chain-arrow">↓</div>
-      <div><b data-i18n="chain.y3">结局</b><span data-i18n="chain.d3">50 倍杠杆、追加保证金、越亏越多</span></div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== 12 WARNING · d=0.80 ========== -->
-<section class="sec" data-bg="#241C24" data-fg="#EFE6EC" data-ac="#A83852" data-d="0.80">
+<!-- ========== 14 WARNING · d=0.88 ========== -->
+<section class="sec" data-bg="#1E161C" data-fg="#EFE6EC" data-ac="#A83852" data-d="0.88">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="warning.kicker">动画开播前的警告</div>
@@ -290,22 +364,22 @@
   </div>
 </section>
 
-<!-- ========== 13 TRUTH · d=0.88 ========== -->
-<section class="sec" data-bg="#141018" data-fg="#E8E2EC" data-ac="#8A3A5A" data-d="0.88">
+<!-- ========== 15 TRUTH · d=0.93 ========== -->
+<section class="sec" data-bg="#121016" data-fg="#E8E2EC" data-ac="#8A3A5A" data-d="0.93">
   <div class="wrap center">
     <div class="kicker" data-i18n="truth.kicker">真相</div>
     <h2 class="truth-title" data-i18n-html="truth.h2">交易本身不是赌博。<br>失控的它才是。</h2>
-    <p class="lead" data-i18n="truth.lead">问题不在外汇，而在高杠杆、追损和停不下来的手。<br>当一笔交易的输赢不再取决于判断，而取决于你还能撑几次——它就变成了赌博。</p>
+    <p class="lead" data-i18n="truth.lead">问题不在外汇，而在高杠杆、追损和停不下来的手。<br>当输赢不再取决于判断，而取决于你还能撑几次——它就变成了赌博。</p>
     <div class="truth-facts">
-      <div class="fact"><b>50×</b><span data-i18n="fact.leverage">杠杆放大波动：约 2% 的不利变动，就可能吃掉全部本金</span></div>
-      <div class="fact"><b>03:14</b><span data-i18n="fact.time">剧情里，久留美在凌晨三点还在看盘</span></div>
+      <div class="fact"><b>25×</b><span data-i18n="fact.leverage">杠杆放大波动：约 4% 的不利变动，就可能吃掉全部本金</span></div>
+      <div class="fact"><b>03:14</b><span data-i18n="fact.time">久留美在凌晨三点还在看盘</span></div>
       <div class="fact"><b>∞</b><span data-i18n="fact.loop">「再最后一次」的循环，没有终点</span></div>
     </div>
     <p class="fact-note">注：以上为简化示意。实际杠杆、保证金比例、强平线与负余额保护规则因交易商、品种和地区而异。</p>
   </div>
 </section>
 
-<!-- ========== 14 END · d=1 ========== -->
+<!-- ========== 16 END · d=1 ========== -->
 <section class="end" id="end" data-bg="#180E10" data-fg="#F5E6E6" data-ac="#C8102E" data-d="1">
   <div class="stick">
     <button type="button" class="back-to-top" id="backToTop">↑ 回到顶部</button>
@@ -318,7 +392,7 @@
       <div class="stats" id="statsBox">
         <div class="stat"><b id="statTotal">—</b><span data-i18n="stat.total">人读到了这里</span></div>
         <div class="stat"><b id="statAbstain">—</b><span data-i18n="stat.abstain">人决定远离 FX</span></div>
-        <div class="stat"><b id="statDwell">—</b><span data-i18n="stat.dwell">秒 · 平均停留</span></div>
+        <div class="stat"><b id="statDwell">—</b><span data-i18n="stat.dwell">分钟 · 平均停留</span></div>
       </div>
 
       <button type="button" class="btn hope-btn" id="abstainBtn" data-i18n="end.btn">我决定远离 FX</button>
@@ -330,14 +404,21 @@
 
 </main>
 
-<!-- ========== FOOTER · d=1 ========== -->
-<footer data-bg="#0C0708" data-fg="#A89A9A" data-ac="#9E1226" data-d="1">
+<!-- ========== FOOTER ========== -->
+<footer data-bg="#0C0708" data-fg="#B5A5A5" data-ac="#9E1226" data-d="1">
   <div class="wrap">
     <p data-i18n="footer.copy">本页为《FX战士久留美》同人学习作品，非官方，无任何商业用途。</p>
+    <p class="credit">角色图像 © でむにゃん・炭酸だいすき／「FX戦士くるみちゃん」製作委員会<br>取自 TV 动画官方网站，仅用于本非商业同人页面的评论与教学引用。</p>
     <p class="disclaimer" data-i18n="footer.disclaimer">所有行情数字均为模拟数据，不构成任何投资建议。<br>如果你或身边的人正在赌博，请寻求帮助。</p>
     <a href="#top" class="back" data-i18n="footer.top">↑ 回到顶部</a>
   </div>
 </footer>
+
+<!-- ========== 全屏惊吓层 ========== -->
+<div id="scare" aria-hidden="true">
+  <img src="assets/kurumi-fall.webp" alt="" width="1000" height="918">
+  <p class="scare-text" id="scareText">你已经没有仓位了。</p>
+</div>
 
 <script src="app.js"></script>
 </body>
