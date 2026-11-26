@@ -77,7 +77,8 @@ app.get('*', (req, res) => {
 
 /* ---------- 启动 ---------- */
 
-app.listen(PORT, () => {
+// 显式绑定 0.0.0.0：发布环境的反向代理需要监听所有网络接口
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  Kurumi FX Warning · Backend`);
   console.log(`  ─────────────────────────────`);
   console.log(`  API:      http://localhost:${PORT}/api`);
