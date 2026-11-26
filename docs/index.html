@@ -13,16 +13,12 @@
 <body>
 
 <!-- ========== 全局覆盖层（视觉异化） ========== -->
-<!-- 右侧装饰：刻度边框 + 竖排标签 + 滚动按钮（参考官网设计） -->
+<!-- 右侧装饰：刻度边框（保留）+ 下一页按钮 -->
 <div class="frame-rail" aria-hidden="true">
   <div class="frame-rail__ticks"></div>
-  <div class="frame-rail__tag"><span>KURUMI FX</span><span class="tag-dot">✕</span></div>
 </div>
-<button id="scrollNext" type="button" class="scroll-next" aria-label="滚动到下一节">
-  <svg class="scroll-next__ring" viewBox="0 0 100 100" aria-hidden="true">
-    <defs><path id="ringPath" d="M50,50 m-36,0 a36,36 0 1,1 72,0 a36,36 0 1,1 -72,0"/></defs>
-    <text><textPath href="#ringPath" startOffset="0%">SCROLL DOWN · SCROLL DOWN · </textPath></text>
-  </svg>
+<button id="scrollNext" type="button" class="scroll-next" aria-label="下一页">
+  <span class="scroll-next__label">下一页</span>
   <span class="scroll-next__arrow">↓</span>
 </button>
 
@@ -59,20 +55,20 @@
 <section id="top" class="hero" data-bg="#F8FAFC" data-fg="#0F172A" data-ac="#2563EB" data-d="0">
   <div class="wrap hero-grid">
     <div class="hero-copy">
-      <div class="pill"><b data-i18n="hero.badge">新课</b><span data-i18n="hero.badge2">零基础入门 · 限时免费</span></div>
-      <h1 data-i18n-html="hero.h1">30 万本金，<em>轻松赚回 2000 万。</em></h1>
-      <p class="lead" data-i18n="hero.lead">Kurumi FX 学院带你从零开始，掌握外汇保证金交易。专业课程、实时指导、社群陪伴——让你的每一笔交易都有底气。</p>
+      <div class="pill"><b data-i18n="hero.badge" id="horrorBadge">新课</b><span data-i18n="hero.badge2" id="horrorBadge2">零基础入门 · 限时免费</span></div>
+      <h1 data-i18n-html="hero.h1" id="horrorH1">30 万本金，<em>轻松赚回 2000 万。</em></h1>
+      <p class="lead" data-i18n="hero.lead" id="horrorLead">Kurumi FX 学院带你从零开始，掌握外汇保证金交易。专业课程、实时指导、社群陪伴——让你的每一笔交易都有底气。</p>
       <div class="ctas">
-        <a href="#features" class="btn" data-i18n="hero.cta1">免费试学 →</a>
-        <a href="#success" class="btn ghost" data-i18n="hero.cta2">看看学员故事</a>
+        <a href="#features" class="btn" data-i18n="hero.cta1" id="horrorCta1">免费试学 →</a>
+        <a href="#success" class="btn ghost" data-i18n="hero.cta2" id="horrorCta2">看看学员故事</a>
       </div>
-      <p class="tiny"><span data-i18n="hero.tiny1">模拟交易零风险 · 真实收益不保证</span><button type="button" id="heroSound" data-i18n="hero.sound">开启氛围音效</button></p>
+      <p class="tiny"><span data-i18n="hero.tiny1" id="horrorTiny">模拟交易零风险 · 真实收益不保证</span><button type="button" id="heroSound" data-i18n="hero.sound">开启氛围音效</button></p>
     </div>
 
     <!-- 模拟交易 App 界面 -->
     <div class="device" aria-label="模拟交易界面">
       <div class="phone-mock">
-        <div class="app-head"><span data-i18n="app.title">我的账户</span><span class="dot">●</span></div>
+        <div class="app-head"><span data-i18n="app.title" id="horrorAppTitle">我的账户</span><span class="dot">●</span></div>
         <div class="balance"><small data-i18n="app.balance">账户余额</small><strong id="heroBalance">¥300,000</strong></div>
         <div class="pnl up" id="heroTodayBox"><span data-i18n="app.today">今日盈亏</span><strong id="heroToday">+¥12,450</strong></div>
         <div class="mini-chart" id="heroChart" aria-hidden="true"></div>
@@ -83,7 +79,7 @@
     </div>
   </div>
   <div class="wrap logos">
-    <p data-i18n="hero.trusted">已有 12,000+ 学员加入</p>
+    <p data-i18n="hero.trusted" id="horrorTrusted">已有 12,000+ 学员加入</p>
     <div class="row2" aria-hidden="true"><span>USD/JPY</span><span>EUR/USD</span><span>AUD/JPY</span><span>GBP/CHF</span><span>+ 40 货币对</span></div>
   </div>
 </section>
@@ -179,7 +175,7 @@
 </section>
 
 <!-- ========== 06 TIPS · d=0.32 ========== -->
-<section class="sec" data-bg="#D8E5F4" data-fg="#16213A" data-ac="#3B6FD4" data-d="0.32">
+<section class="sec" data-bg="#E2EBF7" data-fg="#16213A" data-ac="#2563EB" data-d="0.32">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tips.kicker">进阶课程</div>
@@ -190,12 +186,11 @@
       <div class="step"><div class="n">02</div><h3 data-i18n="tips.s2t">控制仓位</h3><p data-i18n="tips.s2p">永远不要投入超过你能承受损失的资金。这是理性。</p></div>
       <div class="step"><div class="n">03</div><h3 data-i18n="tips.s3t">及时止盈</h3><p data-i18n="tips.s3p">达到目标就落袋为安。贪心是交易最大的敌人。这是智慧。</p></div>
     </div>
-    <p class="center aside" data-i18n="tips.aside">这些道理，久留美都懂。<br>但她一条也没做到。</p>
   </div>
 </section>
 
 <!-- ========== 07 MINDSET · d=0.40 ========== -->
-<section class="sec" data-bg="#CFDCEC" data-fg="#16213A" data-ac="#4A6FA8" data-d="0.40">
+<section class="sec" data-bg="#D8E4F2" data-fg="#16213A" data-ac="#1D4ED8" data-d="0.40">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="mindset.kicker">真实交易者心态</div>
@@ -211,7 +206,7 @@
 </section>
 
 <!-- ========== 08 CHART · d=0.48 ========== -->
-<section class="sec" data-bg="#C2D0E2" data-fg="#1A2436" data-ac="#5A6B8A" data-d="0.48">
+<section class="sec" data-bg="#CCD8E8" data-fg="#1A2436" data-ac="#23407A" data-d="0.48">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="chart.kicker">行情回顾</div>
@@ -221,13 +216,12 @@
     <div class="chart-panel twitch">
       <div class="chart-hud"><span data-i18n="chart.pair">AUD/JPY</span><span id="chartPnl" class="up">+¥124,500</span></div>
       <div class="chart-canvas" id="bigChart" aria-label="模拟 K 线走势：先上涨后暴跌"></div>
-      <div class="chart-foot"><span data-i18n="chart.note">模拟行情 · 仅供警示演示</span><span data-i18n="chart.time">03:14:07</span></div>
     </div>
   </div>
 </section>
 
 <!-- ========== 09 REALITY · d=0.56 ========== -->
-<section class="sec" data-bg="#AFBDCE" data-fg="#1A2436" data-ac="#6B5A7A" data-d="0.56">
+<section class="sec" data-bg="#C0CCDD" data-fg="#1A2436" data-ac="#2A3A66" data-d="0.56">
   <div class="wrap split">
     <div>
       <div class="kicker" data-i18n="reality.kicker">强平通知</div>
@@ -258,7 +252,6 @@
       <blockquote data-i18n="voices.q1">“我把父亲攒的 300 万也投进去了。我想翻本，翻了本就收手。”</blockquote>
       <blockquote data-i18n="voices.q2">“每次下单前我都说这是最后一次。可 K 线一动，我就忘了。”</blockquote>
       <blockquote data-i18n="voices.q3">“赚的时候觉得自己是天才，亏的时候才知道——市场根本不认识我。”</blockquote>
-      <p class="voices-note" data-i18n="voices.note">以上台词改编自《FX战士久留美》剧情</p>
     </div>
   </div>
 </section>
@@ -310,8 +303,9 @@
 </section>
 
 <!-- ========== 14 END · d=1 ========== -->
-<section class="end" id="end" data-bg="#1A1614" data-fg="#F5EEE6" data-ac="#F59E0B" data-d="1">
+<section class="end" id="end" data-bg="#180E10" data-fg="#F5E6E6" data-ac="#C8102E" data-d="1">
   <div class="stick">
+    <button type="button" class="back-to-top" id="backToTop">↑ 回到顶部</button>
     <div class="end-content">
       <div class="hope-glow"></div>
       <div class="kicker" data-i18n="end.kicker">最后的话</div>
@@ -325,7 +319,6 @@
       </div>
 
       <button type="button" class="btn hope-btn" id="abstainBtn" data-i18n="end.btn">我决定远离 FX</button>
-      <p class="end-note" id="endNote" data-i18n="end.note">这个决定不会被记录到任何个人账户。它只是一个承诺。</p>
 
       <p class="final" data-i18n="end.final">谢谢你读到这里。<br>退出页面，去吃点东西，睡个好觉。</p>
     </div>
@@ -335,7 +328,7 @@
 </main>
 
 <!-- ========== FOOTER · d=1 ========== -->
-<footer data-bg="#0F0C0A" data-fg="#A8A29E" data-ac="#B45309" data-d="1">
+<footer data-bg="#0C0708" data-fg="#A89A9A" data-ac="#9E1226" data-d="1">
   <div class="wrap">
     <p data-i18n="footer.copy">本页为《FX战士久留美》同人学习作品，非官方，无任何商业用途。</p>
     <p class="disclaimer" data-i18n="footer.disclaimer">所有行情数字均为模拟数据，不构成任何投资建议。<br>如果你或身边的人正在赌博，请寻求帮助。</p>

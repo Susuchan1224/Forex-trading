@@ -233,9 +233,17 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.03em;line-height:1.2;font-w
 .end-content{text-align:center;position:relative;z-index:2;padding:0 24px;max-width:820px}
 .hope-glow{
   position:absolute;left:50%;top:45%;width:600px;height:600px;transform:translate(-50%,-50%);
-  background:radial-gradient(circle,rgba(245,158,11,.18),transparent 65%);
+  background:radial-gradient(circle,rgba(200,16,46,.16),transparent 65%);
   pointer-events:none;z-index:-1;
 }
+.back-to-top{
+  position:absolute;top:32px;right:32px;z-index:5;
+  background:transparent;color:var(--accent);
+  border:1.5px solid var(--accent);border-radius:999px;
+  padding:11px 22px;font:700 15px var(--sans);cursor:pointer;
+  transition:transform .2s, background .2s;
+}
+.back-to-top:hover{transform:translateY(-2px);background:color-mix(in srgb, var(--accent) 14%, transparent)}
 .end h2{font-family:var(--serif);font-size:clamp(36px,6vw,64px);font-weight:700}
 .end .lead{font-size:19px;line-height:1.9;color:var(--muted);margin:20px auto 0;max-width:620px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:44px auto;max-width:640px}
@@ -248,7 +256,7 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.03em;line-height:1.2;font-w
 @media (max-width:560px){.stats{grid-template-columns:1fr}}
 
 /* ---------- FOOTER ---------- */
-footer{padding:70px 0 50px;text-align:center;font-size:13px;color:var(--muted);background:#0B0908}
+footer{padding:70px 0 50px;text-align:center;font-size:13px;color:var(--muted);background:#0C0708}
 footer .disclaimer{margin-top:14px;line-height:1.9;font-size:12px}
 footer .back{display:inline-block;margin-top:26px;color:var(--accent);font-weight:700}
 
@@ -275,6 +283,14 @@ footer .back{display:inline-block;margin-top:26px;color:var(--accent);font-weigh
 /* 抖动（由 JS 随机施加 transform） */
 .twitch{will-change:transform}
 
+/* 回顶后的惊悚模式：轻微噪点底纹常驻 */
+body.horror-mode::after{
+  content:"";position:fixed;inset:0;z-index:56;pointer-events:none;
+  background-image:repeating-linear-gradient(0deg,rgba(120,0,0,.035) 0 1px,transparent 1px 3px);
+  animation:horrorPulse 4s ease-in-out infinite;
+}
+@keyframes horrorPulse{0%,100%{opacity:.6}50%{opacity:1}}
+
 /* ---------- 滚动进入动画 ---------- */
 .reveal{opacity:0;transform:translateY(28px);transition:opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1)}
 .reveal.in{opacity:1;transform:none}
@@ -290,50 +306,28 @@ footer .back{display:inline-block;margin-top:26px;color:var(--accent);font-weigh
     transparent 0 15px, color-mix(in srgb, var(--accent) 55%, transparent) 15px 17px, transparent 17px 34px);
   background-size:100% 34px;
 }
-.frame-rail__tag{
-  position:absolute;top:50%;right:14px;transform:translateY(-50%);
-  display:flex;flex-direction:column;align-items:center;gap:8px;
-  writing-mode:vertical-rl;
-  background:color-mix(in srgb, var(--accent) 92%, white);
-  color:#fff;font:700 11px var(--sans);letter-spacing:.22em;
-  padding:16px 8px;border-radius:999px;
-  box-shadow:0 8px 24px -10px var(--accent);
-  pointer-events:auto;user-select:none;
-}
-.frame-rail__tag .tag-dot{
-  writing-mode:horizontal-tb;font-size:13px;
-  background:rgba(255,255,255,.22);border-radius:50%;width:22px;height:22px;
-  display:grid;place-items:center;
-}
-
-/* 右下角滚动按钮：旋转文字环 + 箭头 */
+/* 右下角「下一页」按钮：静态箭头 + 明确文字标注 */
 .scroll-next{
-  position:fixed;right:26px;bottom:26px;width:92px;height:92px;z-index:88;
+  position:fixed;right:26px;bottom:26px;width:88px;height:88px;z-index:88;
   border-radius:50%;cursor:pointer;
-  background:color-mix(in srgb, var(--accent) 10%, transparent);
+  background:color-mix(in srgb, var(--accent) 12%, transparent);
   border:2px solid var(--accent);
-  display:grid;place-items:center;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   box-shadow:0 12px 30px -14px var(--accent);
   transition:transform .3s, opacity .3s;
 }
 .scroll-next:hover{transform:scale(1.06)}
 .scroll-next.hidden{opacity:0;pointer-events:none;transform:scale(.8)}
-.scroll-next__ring{
-  position:absolute;inset:0;width:100%;height:100%;border-radius:50%;
-  animation:ringSpin 14s linear infinite;
-}
-.scroll-next__ring text{
-  fill:var(--accent);font:700 8.5px var(--sans);letter-spacing:.16em;
+.scroll-next__label{
+  font:700 14px var(--sans);color:var(--accent);letter-spacing:.04em;
 }
 .scroll-next__arrow{
-  position:relative;z-index:2;font-size:22px;font-weight:700;color:var(--accent);
-  animation:arrowBob 1.6s ease-in-out infinite;
+  font-size:24px;line-height:1;font-weight:400;color:var(--accent);
 }
-@keyframes ringSpin{to{transform:rotate(360deg)}}
-@keyframes arrowBob{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}
 @media (max-width:760px){
-  .frame-rail__tag{display:none}
   .scroll-next{width:72px;height:72px;right:16px;bottom:16px}
+  .scroll-next__label{font-size:12px}
+  .scroll-next__arrow{font-size:20px}
 }
 
 /* ---------- OVERLAYS ---------- */

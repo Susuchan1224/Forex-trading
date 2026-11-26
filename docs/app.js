@@ -65,13 +65,17 @@ const hsl2hex = (h, s, l) => {
   };
   return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
 };
-/** 按主题转换颜色：bg 转暗、fg 转亮、ac 提亮但保持色相 */
+/**
+ * 按主题转换颜色。
+ * 关键约束：夜间强调色的亮度上限必须压低（L<=0.56），否则底部高饱和黄色
+ * 会被转成了刺眼亮块，造成"闪成浅色"的观感。
+ */
 function themeColor(hex, role) {
   if (!darkMode) return hex;
   const [h, s, l] = rgb2hsl(...hex.slice(1).match(/../g).map(x => parseInt(x, 16)));
-  if (role === 'bg') return hsl2hex(h, Math.min(s, .38), .07 + (1 - l) * .06);
-  if (role === 'fg') return hsl2hex(h, Math.min(s, .18), .86 + l * .08);
-  return hsl2hex(h, Math.min(Math.max(s, .45), .8), .58 + l * .12);
+  if (role === 'bg') return hsl2hex(h, Math.min(s, .30), .07 + (1 - l) * .05);   // 暗背景 L 0.07~0.12
+  if (role === 'fg') return hsl2hex(h, Math.min(s, .16), .80 + l * .06);         // 亮文字 L 0.80~0.86
+  return hsl2hex(h, Math.min(Math.max(s, .35), .62), .44 + l * .10);             // 强调色 L 0.44~0.54，不刺眼
 }
 
 /** 取文案。当前语言缺失时回退到中文，最后回退到 key 本身。 */
@@ -233,9 +237,21 @@ function frame() {
   root.style.setProperty('--d', D.toFixed(3));
 
   // 覆盖层强度随 D 增长：噪点在中段冷灰区提前出现，红色段才达到最强
-  noiseEl.style.opacity = clamp((D - .32) * .42, 0, .24);
+  noiseEl.style.opacity = horrorRevealed ? Math.max(.07, clamp((D - .32) * .42, 0, .24)) : clamp((D - .32) * .42, 0, .24);
   vig.style.opacity = clamp((D - .45) * 1.0);
   scan.style.opacity = clamp((D - .68) * 1.2, 0, .45);
+
+  // 底部红色段之后：逐渐加灰色滤镜并整体压暗（d>=0.80 起）
+  // 注意：滤镜只作用于 main/footer，不能加在 body 上——否则会创建包含块，
+  // 导致 position:fixed 的导航/噪点/右侧装饰错误地随页面滚动。
+  const gray = clamp((D - .80) / .20);
+  const filter = gray > .01
+    ? `grayscale(${(gray * .35).toFixed(3)}) brightness(${(1 - gray * .18).toFixed(3)})`
+    : '';
+  const mainEl = $('main');
+  const footEl = $('footer');
+  if (mainEl) mainEl.style.filter = filter;
+  if (footEl) footEl.style.filter = filter;
 
   // 标题随恐惧深度变化
   const titles = [
@@ -265,10 +281,6 @@ function frame() {
   }
   markWitnessedBottom();
   syncScrollBtn();
-
-  // 账户看板：动态数据 + 回到顶部的爆仓翻转
-  const scrollProgress = scrollY / (document.documentElement.scrollHeight - innerHeight || 1);
-  updateAccountBoard(scrollProgress);
 
   updateAudio();
 }
@@ -379,63 +391,78 @@ function drawChart() {
     </svg>`;
 }
 
-/* 4.5 顶部 App 迷你 K 线（动态：随账户状态改变走势） */
+/* 4.5 顶部 App 迷你 K 线：滚动窗口式走势图 */
 let miniTrend = 1;   // 1=上涨盈利，-1=爆仓下跌
+let priceHistory = []; // 保留最近 N 个价格点，形成连续走势
+const CHART_POINTS = 30;
+
 function drawMiniChart() {
   const box = $('#heroChart');
   if (!box) return;
   const W = 300, H = 80;
-  let p = 40;
-  const pts = [];
-  // 上涨阶段：随机漫步偏上行；爆仓阶段：断崖式下跌
-  for (let i = 0; i < 30; i++) {
-    if (miniTrend < 0 && i > 10) p -= 4 + Math.random() * 3;
-    else p += (Math.random() - .35) * 5;
-    pts.push(Math.max(6, Math.min(H - 6, p)));
+  if (!priceHistory.length) {
+    let p = 40;
+    for (let i = 0; i < CHART_POINTS; i++) { p += (Math.random() - .35) * 5; priceHistory.push(p); }
   }
-  const coords = pts.map((v, i) => `${(i / 29 * W).toFixed(1)},${v.toFixed(1)}`).join(' ');
+  const pts = priceHistory.map(v => Math.max(6, Math.min(H - 6, v)));
+  const coords = pts.map((v, i) => `${(i / (pts.length - 1) * W).toFixed(1)},${v.toFixed(1)}`).join(' ');
   const color = miniTrend < 0 ? '#DC2626' : '#2563EB';
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
 }
 
-/* 4.5b 账户看板：动态模拟 + 回到顶部的爆仓翻转 */
+/* 4.5b 账户看板：自动递增模拟 + 回到顶部的爆仓翻转 */
 let accountState = 'profit';   // 'profit' | 'bust'
 let witnessedBottom = false;   // 是否滚到底部读过真相
 let balanceBase = 300000;
+let pnlValue = 12450;          // 当前浮动盈亏，独立于滚动
 
-function updateAccountBoard(progress) {
+/** 定时器驱动：每 2 秒账户小幅增长一点，K 线推入新点 */
+function tickAccount() {
+  if (accountState !== 'profit') return;
+  // 盈亏缓慢上行，带轻微随机波动；每次增加约 180~900 日元
+  pnlValue += Math.round(180 + Math.random() * 720);
+  // K 线：推入一个新点（延续上一点，偏上行），移除最旧的点
+  const last = priceHistory[priceHistory.length - 1] || 40;
+  const next = Math.max(8, Math.min(72, last + (Math.random() - .32) * 7));
+  priceHistory.push(next);
+  if (priceHistory.length > CHART_POINTS) priceHistory.shift();
+  drawMiniChart();
+  renderAccountNumbers();
+}
+
+function renderAccountNumbers() {
+  const balanceEl = $('#heroBalance');
+  const pnlEl = $('#heroToday');
+  if (!balanceEl || !pnlEl) return;
+  balanceEl.textContent = '¥' + (balanceBase + pnlValue).toLocaleString('zh-CN');
+  pnlEl.textContent = (pnlValue >= 0 ? '+' : '-') + '¥' + Math.abs(pnlValue).toLocaleString('zh-CN');
+}
+
+/** 从底部回到顶部：账户爆仓翻转（保留入口供回顶按钮调用） */
+function bustAccount() {
   const balanceEl = $('#heroBalance');
   const pnlEl = $('#heroToday');
   const pnlBox = $('#heroTodayBox');
   const marginEl = $('#heroMargin');
   const posEl = $('#heroPosition');
-  if (!balanceEl || !pnlEl) return;
-
-  // 从底部回到顶部：叙事翻转——账户爆仓
-  if (witnessedBottom && progress < .03) {
-    if (accountState !== 'bust') {
-      accountState = 'bust';
-      miniTrend = -1;
-      drawMiniChart();
-      track('account_bust_after_return');
-      balanceEl.style.color = '#DC2626';
-      pnlBox.className = 'pnl down';
-      pnlEl.textContent = '-¥300,000';
-      if (marginEl) { marginEl.textContent = '强制平仓'; marginEl.className = 'bad'; }
-      if (posEl) posEl.textContent = '已清空';
-      animateNumber(balanceEl, balanceBase, 0, 1400, '¥');
-    }
-    return;
+  if (accountState === 'bust' || !balanceEl) return;
+  accountState = 'bust';
+  miniTrend = -1;
+  priceHistory = [];
+  // 爆仓 K 线：断崖式
+  let p = 60;
+  for (let i = 0; i < CHART_POINTS; i++) {
+    if (i > 8) p -= 4 + Math.random() * 3;
+    priceHistory.push(Math.max(6, p));
   }
-
-  // 正常状态：数值随滚动小幅波动（模拟实时行情）
-  if (accountState === 'profit') {
-    const drift = Math.round(Math.sin(progress * 30) * 3800 + (Math.random() - .5) * 900);
-    const pnl = 12450 + drift;
-    balanceEl.textContent = '¥' + (balanceBase + pnl).toLocaleString('zh-CN');
-    pnlEl.textContent = (pnl >= 0 ? '+' : '-') + '¥' + Math.abs(pnl).toLocaleString('zh-CN');
-    // 定时重绘迷你 K 线（节流由 setInterval 控制）
-  }
+  drawMiniChart();
+  track('account_bust_after_return');
+  balanceEl.style.color = '#DC2626';
+  pnlBox.className = 'pnl down';
+  pnlEl.textContent = '-¥300,000';
+  if (marginEl) { marginEl.textContent = '强制平仓'; marginEl.className = 'bad'; }
+  if (posEl) posEl.textContent = '已清空';
+  animateNumber(balanceEl, balanceBase, 0, 1400, '¥');
 }
 
 // 记录是否已读到真相（D>0.95 视为读完）
@@ -466,7 +493,6 @@ $('#abstainBtn')?.addEventListener('click', e => {
   btn.textContent = '✓ 已记下这个决定';
   btn.disabled = true;
   btn.style.opacity = '.75';
-  $('#endNote').textContent = '不需要向任何人证明。你只需要记得此刻。';
   loadStats();
 });
 
@@ -613,6 +639,54 @@ setInterval(() => {
   }
 }, 850);
 
+/* ---------------- 5.4 回顶后的惊悚文案翻转 ---------------- */
+/**
+ * 用户读完真相后点击"回到顶部"，叙事发生翻转：
+ *   - 顶部介绍文案被替换为惊悚版本
+ *   - 账户爆仓（bustAccount）
+ *   - 保留轻微噪点（即使回到 D=0 也不完全清除）
+ */
+const HORROR_COPY = {
+  horrorBadge:  '已经来不及了',
+  horrorBadge2: '你早就入场了',
+  horrorH1:     '它一直在<em>等你回来。</em>',
+  horrorLead:   '你以为自己离开了。可市场记得你，账户记得你，那些深夜的犹豫也记得你。你回来了——这一次，是为清算而来的。',
+  horrorCta1:   '别再往下看了 →',
+  horrorCta2:   '他们还在等你',
+  horrorTiny:   '这里没有模拟 · 亏损都是真的',
+  horrorTrusted:'已有 11,998 人再也回不去',
+  horrorAppTitle:'你的账户（已清算）',
+};
+let horrorRevealed = false;
+
+function applyHorrorCopy() {
+  for (const [id, text] of Object.entries(HORROR_COPY)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    // 保留 h1 的 <em> 结构，其余纯文本替换
+    if (id === 'horrorH1') el.innerHTML = text;
+    else el.textContent = text;
+  }
+  document.body.classList.add('horror-mode');
+  track('horror_revealed');
+}
+
+/** 回到顶部按钮点击处理：触发叙事翻转 */
+function goBackToTop() {
+  if (witnessedBottom && !horrorRevealed) {
+    horrorRevealed = true;
+    applyHorrorCopy();
+    bustAccount();
+  }
+  // 先滚回顶部（平滑），噪点在 frame 中因 horrorRevealed 保留
+  scrollTo({ top: 0, behavior: 'smooth' });
+  toast('你回来了。可有些东西，已经回不去了。');
+}
+
+// 绑定两处回顶按钮：end 内的按钮 + footer 的链接
+$('#backToTop')?.addEventListener('click', goBackToTop);
+$('footer .back')?.addEventListener('click', e => { e.preventDefault(); goBackToTop(); });
+
 /* ---------------- 5.5 滚动进入动画 ---------------- */
 function initReveal() {
   const targets = $$('.card, .thought, .quote, .step, .fact, .chip, .voices blockquote, .official-warning');
@@ -643,10 +717,10 @@ function initReveal() {
   // 定期上报队列（防止用户停留时队列积压）
   setInterval(flush, 4000);
 
-  // 账户迷你 K 线每 1.2 秒刷新，模拟实时行情
-  setInterval(() => {
-    if (scrollY < innerHeight * 1.5 && accountState === 'profit') drawMiniChart();
-  }, 1200);
+  // 账户看板：每 2 秒自动递增（与滚动完全解耦），并初始化数字
+  renderAccountNumbers();
+  drawMiniChart();
+  setInterval(tickAccount, 2000);
 
   // 调试/分享：URL 加 ?at=0.5 可跳转到指定滚动进度（0~1）
   // 用途：快速定位到某个叙事阶段截图、分享特定章节给朋友
