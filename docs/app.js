@@ -605,11 +605,11 @@ const TAU = Math.PI * 2;
  * 而原作是「黑底上的彩色颜料」：底色越暗，颜料才越跳。
  */
 const PALETTES = {
-  bright: { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#FF8A3D'], w: [.46, .22, .14, .1, .08], veil: '#170F14', veilA: .78, drip: false },
+  bright: { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#FF8A3D'], w: [.46, .22, .14, .1, .08], veil: '#2A1220', veilA: .52, drip: false },
   // 混进一块脏红：还是糖纸色，但有一个颜色不对
-  wrong:  { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#6E0C14'], w: [.38, .2, .12, .1, .2], veil: '#150C12', veilA: .80, drip: false },
-  red:    { colors: ['#E03A3A', '#C8102E', '#8C0F1C', '#5C0A12'], w: [.34, .3, .22, .14], veil: '#240508', veilA: .84, drip: true },
-  blood:  { colors: ['#C8102E', '#A3140B', '#8C0F1C', '#5C0A12'], w: [.32, .3, .24, .14], veil: '#2A0409', veilA: .88, drip: true }
+  wrong:  { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#6E0C14'], w: [.38, .2, .12, .1, .2], veil: '#241020', veilA: .55, drip: false },
+  red:    { colors: ['#E03A3A', '#C8102E', '#8C0F1C', '#5C0A12'], w: [.34, .3, .22, .14], veil: '#240508', veilA: .60, drip: true },
+  blood:  { colors: ['#C8102E', '#A3140B', '#8C0F1C', '#5C0A12'], w: [.32, .3, .24, .14], veil: '#1A0306', veilA: .66, drip: true }
 };
 
 function sizePaint() {
@@ -875,11 +875,13 @@ function splash(key, opts = {}) {
 
 
 
-/* 在哪里放转场：越靠后颜色越像血 */
+/* 在哪里放转场：越靠后颜色越像血。
+   at 是触发阈值（相对视口高度）——#losscut 提前到 .82，
+   因为那一段是粘性全屏立绘，等它铺满屏幕就再也看不见背景了。 */
 const SPLASH_AT = {
-  '#success': 'bright',   // 彩色的，这是全页最"快乐"的一屏
-  '#notify':  'wrong',    // 还是彩色，但混了一块脏红 —— 第一个不对劲
-  '#losscut': 'blood'     // 暗红，往下淌
+  '#success': { pal: 'bright', at: .46 },   // 糖纸色，全页最"快乐"的一屏
+  '#notify':  { pal: 'wrong',  at: .46 },   // 还是彩色，但混了一块脏红
+  '#losscut': { pal: 'blood',  at: .82 }    // 暗红，往下淌
 };
 const splashFired = {};
 
@@ -889,9 +891,10 @@ function checkSplashes() {
     const el = document.querySelector(sel);
     if (!el) continue;
     const r = el.getBoundingClientRect();
-    if (r.top < innerHeight * .46 && r.bottom > 0) {
+    const cfg = SPLASH_AT[sel];
+    if (r.top < innerHeight * cfg.at && r.bottom > 0) {
       splashFired[sel] = true;
-      splash(SPLASH_AT[sel]);
+      splash(cfg.pal);
     }
   }
 }
@@ -1084,7 +1087,7 @@ function crashImpact() {
   splash('red', { cover: 320, hold: 90, fade: 640 });   // 这一根之后，转场的颜色变了
   document.body.classList.add('shake');
   setTimeout(() => document.body.classList.remove('shake'), 460);
-  flashScreen('#E03A3A', .2, 240);
+  flashScreen('#E03A3A', .13, 240);
   track('chart_crash');
 }
 

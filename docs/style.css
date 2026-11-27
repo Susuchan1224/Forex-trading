@@ -219,7 +219,7 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
    08 NOTIFY · 半夜的手机 —— 第一个真正的「事件」
    滚动进度驱动：每推进一段，落一条通知
    ================================================================= */
-.night{background:#1B2230}
+.night{}
 .notify-stage{
   max-width:420px;margin:60px auto 0;position:relative;
   display:flex;flex-direction:column;align-items:center;gap:20px;
@@ -300,7 +300,7 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
 /* =================================================================
    10 LOSSCUT · 强制平仓（全屏，滚动驱动）
    ================================================================= */
-.losscut{height:240vh;background:#06080C}
+.losscut{height:240vh}
 .losscut__trap{
   position:sticky;top:0;height:100vh;height:100dvh;overflow:hidden;
   display:grid;place-items:center;
@@ -433,7 +433,7 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
    13 YOU · 「本页一直在数」
    全页唯一一处使用读者自身真实数据的地方，也是最冷的一屏
    ================================================================= */
-.you{background:#100A0E}
+.you{}
 .readout{
   position:relative;max-width:580px;margin:52px auto 0;
   border:1px solid #2C1F24;border-radius:4px;
@@ -495,7 +495,7 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
 /* =================================================================
    15 LOG · 券商系统日志
    ================================================================= */
-.log{height:280vh;background:#08070A}
+.log{height:280vh}
 .log__stick{position:sticky;top:0;height:100vh;height:100dvh;display:grid;place-items:center;padding:0 24px}
 .term{
   width:min(820px,100%);
@@ -633,8 +633,13 @@ body.horror-mode #navCta{background:var(--accent)}
 
 /* ---------- OVERLAYS ---------- */
 /* 颜料转场层。放在内容之上、惊吓层之下 */
+/* 颜料转场层。
+   注意是 z-index:-1 —— 它被夹在「页面底色」和「正文」之间，
+   所以颜料是在墙上游走，而不是盖在文字上。
+   正因如此，下面几段的实色背景必须去掉，否则会把这一层整个挡住。 */
 #paint{
-  position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:140;
+  position:fixed;inset:0;width:100%;height:100%;pointer-events:none;
+  z-index:-1;
   opacity:1;
 }
 #noise{
