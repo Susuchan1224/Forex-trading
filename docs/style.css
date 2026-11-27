@@ -45,6 +45,10 @@ a{color:inherit;text-decoration:none}
 img{max-width:100%;height:auto;display:block}
 .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
 section{position:relative}
+/* 段落内的情景层（颜料画布 / 天色 / 颗粒）都是定位元素，
+   而未定位的正文会画在它们「下面」。这一行把正文抬到情景层之上，
+   否则 dusk、grain 会把整屏文字一起盖掉。 */
+section>.wrap{position:relative;z-index:1}
 ::selection{background:var(--accent);color:#fff}
 
 /* ---------- NAV ---------- */
@@ -215,53 +219,66 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
 .thought p{font-family:var(--serif);font-size:20px;font-weight:600;line-height:1.5;margin-bottom:8px;padding-left:18px}
 .thought small{font-family:var(--mono);font-size:13px;color:var(--muted)}
 
+/* 这一段底色要一路沉下去，卡片如果跟着变灰就会读不清。
+   所以给它一张自己的「纸」：固定浅底 + 固定深字，不参与换色。
+   底色越黑，这几张便条越像留在墙上的最后一点光。 */
+#mindset .thought{
+  background:rgba(247,249,252,.94);
+  border-color:rgba(15,23,42,.10);
+  border-left-color:#2C4A94;
+  box-shadow:0 22px 46px -28px rgba(0,0,0,.6);
+}
+#mindset .thought p{color:#141B2B}
+#mindset .thought small{color:#4A5568}
+#mindset .thought .q{color:#2C4A94}
+
 /* =================================================================
-   08 NOTIFY · 半夜的手机 —— 第一个真正的「事件」
-   滚动进度驱动：每推进一段，落一条通知
+   颜料转场 · 画在段落自己的背景上
+   -----------------------------------------------------------------
+   画布是段落内的绝对定位元素（不是 fixed）。所以滚轮一动，
+   颜料跟着段落一起走，像喷在墙上，而不是盖在屏幕上的一层贴纸。
+   代价是每个段落一张画布，好处是它真的属于那一屏。
    ================================================================= */
-.night{}
-.notify-stage{
-  max-width:420px;margin:60px auto 0;position:relative;
-  display:flex;flex-direction:column;align-items:center;gap:20px;
+.burst-stage{overflow:hidden}
+.burst-stage>.wrap{position:relative;z-index:1}
+canvas.burst{
+  position:absolute;left:0;top:0;width:100%;height:100%;
+  pointer-events:none;z-index:0;
+  /* 画布就是段落本身，颜料喷到边界会被硬切出一条直线。
+     上下各留 7% 的透明过渡，边缘就变成「散开了」而不是「被裁掉了」 */
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 7%,#000 93%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0,#000 7%,#000 93%,transparent 100%);
 }
-.notify-phone{
-  width:100%;border-radius:34px;padding:32px 20px 26px;
-  background:linear-gradient(180deg,#0E131C,#151C28 60%,#0B0F16);
-  border:1px solid #2A3444;
-  box-shadow:0 40px 90px -40px #000, inset 0 1px 0 rgba(255,255,255,.06);
-  min-height:520px;
+
+/* 天色渐暗：叠在段落底色之上、正文之下。
+   opacity 由 JS 按段落进度写入，这样「真实交易者心态」那一屏
+   是一路慢慢沉下去的，而不是滚到边界突然换色。 */
+.dusk{
+  position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:linear-gradient(180deg,
+    rgba(14,18,26,0) 0%,
+    rgba(14,18,26,.34) 42%,
+    rgba(16,21,30,.78) 74%,
+    #141A24 100%);
+  opacity:0;
 }
-.np-time{font-size:62px;font-weight:200;letter-spacing:-.04em;text-align:center;color:#E8EEF7;font-variant-numeric:tabular-nums;line-height:1.1}
-.np-round{text-align:center;font-size:11.5px;letter-spacing:.16em;color:#6C7A8E;text-transform:uppercase;margin-bottom:24px}
-.np-stack{display:flex;flex-direction:column;gap:10px}
-.np-note{
-  display:grid;grid-template-columns:34px 1fr;gap:11px;
-  background:rgba(255,255,255,.075);
-  border:1px solid rgba(255,255,255,.09);
-  border-radius:15px;padding:11px 13px;
-  opacity:0;translate:0 -18px;scale:.94;
-  transition:opacity .5s var(--ease), translate .5s var(--ease), scale .5s var(--ease);
+
+/* 颗粒。用 SVG 湍流当纹理，比 canvas 便宜，也更容易在任意段落复用 */
+.grain{
+  position:absolute;inset:0;pointer-events:none;z-index:2;
+  opacity:0;mix-blend-mode:soft-light;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='180' height='180' filter='url(%23n)' opacity='.55'/></svg>");
+  background-size:180px 180px;
+  animation:grainShift .5s steps(1) infinite;
 }
-.np-note.on{opacity:1;translate:0 0;scale:1}
-.np-note__ico{
-  width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
-  font-size:15px;font-weight:800;color:#fff;background:#1F6FEB;
+@keyframes grainShift{
+  0%{background-position:0 0}
+  25%{background-position:-32px 18px}
+  50%{background-position:24px -26px}
+  75%{background-position:-14px -12px}
+  100%{background-position:0 0}
 }
-.np-note.alert .np-note__ico{background:#B3261E}
-.np-note.warn .np-note__ico{background:#B26A00}
-.np-note__body{min-width:0}
-.np-note__top{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:#8A97A9;letter-spacing:.03em}
-.np-note__title{font-size:13.5px;font-weight:700;color:#EDF2FA;margin:2px 0 1px}
-.np-note__text{font-size:12.5px;line-height:1.45;color:#AFBACB}
-.np-note__text b{color:#FF8C7A;font-variant-numeric:tabular-nums;font-weight:700}
-.notify-count{margin-top:22px;font-size:12.5px;color:#7C8A9E;letter-spacing:.04em}
-.notify-count b{color:#C9D5E6;font-variant-numeric:tabular-nums;font-size:15px}
-.np-hint{
-  margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.07);
-  font-size:11px;letter-spacing:.08em;color:#6A778A;text-align:center;
-  opacity:0;transition:opacity .8s;
-}
-.np-hint.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.grain{animation:none}}
 
 /* =================================================================
    09 CHART · K 线
@@ -297,76 +314,186 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
 .chart-legend .lg-dot.crash{background:#FF5C5C}
 .chart-legend .lg-note{margin-left:auto;font-style:italic;opacity:.75}
 
+/* 行情回顾的「不对劲」：色差、横向撕裂、颗粒
+   --ca 由 JS 按该段进度写入（px），--ck 控制颗粒浓度。
+   全部用 CSS 变量驱动，不额外加定时器；扭曲只在读数上抖，不动文字排版。 */
+.chart-panel{
+  --ca:0px;
+  filter:drop-shadow(var(--ca) 0 0 rgba(255,40,80,.45))
+         drop-shadow(calc(var(--ca) * -1) 0 0 rgba(0,220,255,.4));
+  transition:filter .2s linear;
+}
+.chart-canvas svg{
+  animation:chartTear 7s steps(1) infinite;
+  transform-origin:50% 50%;
+}
+@keyframes chartTear{
+  0%,88%,100%{transform:none;clip-path:none}
+  89%{transform:translateX(-3px) skewX(.6deg);clip-path:inset(12% 0 62% 0)}
+  90%{transform:translateX(2px);clip-path:inset(46% 0 28% 0)}
+  91%{transform:none;clip-path:none}
+  94%{transform:translateX(1px) skewX(-.4deg);clip-path:inset(70% 0 8% 0)}
+  95%{transform:none;clip-path:none}
+}
+.grain--chart{opacity:0}
+/* 崩盘那一瞬间：色差拉满，面板本体也错位两下 */
+.chart-panel.crashed{
+  filter:drop-shadow(9px 0 0 rgba(255,40,80,.55)) drop-shadow(-9px 0 0 rgba(0,220,255,.5));
+  animation:panelKnock .46s steps(2) 2;
+}
+@keyframes panelKnock{
+  0%,100%{translate:0 0}
+  30%{translate:-5px 2px}
+  60%{translate:5px -2px}
+  80%{translate:-2px 1px}
+}
+@media (prefers-reduced-motion:reduce){
+  .chart-canvas svg{animation:none}
+  .chart-panel,.chart-panel.crashed{filter:none;animation:none}
+}
+
 /* =================================================================
-   10 LOSSCUT · 强制平仓（全屏，滚动驱动）
+   10 FALL · 坠落
+   -----------------------------------------------------------------
+   这一段不再是滚动的舞台，而是一个「只发生一次」的全屏事件：
+     故障转场 → 黑场淡入 → 久留美下沉进漩涡 → 淡出到下一部分
+   因为它不挂在滚动上，所以往回滚也回不来。
    ================================================================= */
-.losscut{height:240vh}
-.losscut__trap{
-  position:sticky;top:0;height:100vh;height:100dvh;overflow:hidden;
-  display:grid;place-items:center;
+#fall{
+  position:fixed;inset:0;z-index:160;
+  background:#05070B;
+  display:grid;place-items:center;overflow:hidden;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .85s var(--ease), visibility 0s linear .85s;
 }
-.losscut__vortex{
-  position:absolute;inset:-6%;
-  width:112%;height:112%;object-fit:cover;
-  opacity:.5;filter:brightness(.72) saturate(1.1);
-  transform:scale(1.04);
-  will-change:transform;
+#fall.on{opacity:1;visibility:visible;transition:opacity .85s var(--ease)}
+#fall.out{opacity:0;transition:opacity 1s var(--ease)}
+
+.fall__vortex{
+  /* 这张图整张在转。要让它转到任何角度都盖满画面，
+     元素必须是一个边长 ≥ √2·max(vw,vh) 的正方形；
+     普通的长方形无论放大多少，转到 45° 都会把直角露出来。 */
+  position:absolute;left:50%;top:50%;translate:-50% -50%;
+  width:max(200vw,200vh);height:max(200vw,200vh);object-fit:cover;
+  /* 全局 img{max-width:100%} 会把上面这个正方形压回视口宽，
+     压回去就变成竖长方形，一旋转就露直角 —— 必须放开 */
+  max-width:none;max-height:none;
+  opacity:0;filter:brightness(.6) saturate(1.15) blur(1px);
+  animation:voidSpin 16s linear infinite;
+  -webkit-mask-image:radial-gradient(circle at 50% 50%,#000 0 46%,transparent 88%);
+  mask-image:radial-gradient(circle at 50% 50%,#000 0 46%,transparent 88%);
 }
-.losscut__title{
-  z-index:2;
-  position:absolute;top:15vh;left:50%;translate:-50% 0;
-  width:min(78vw,760px);height:auto;
+#fall.on .fall__vortex{animation:voidSpin 16s linear infinite, voidIn 2.6s ease-out .1s forwards}
+@keyframes voidIn{from{opacity:0;transform:scale(1.14)}to{opacity:.55;transform:scale(1)}}
+@keyframes voidSpin{
+  from{rotate:0deg}
+  to{rotate:360deg}
+}
+
+/* 黑洞：中心一团纯黑，把角色吸进去，同时压暗四周 */
+.fall__hole{
+  position:absolute;left:50%;top:56%;width:80vmin;height:80vmin;
+  translate:-50% -50%;border-radius:50%;
+  background:radial-gradient(circle,#000 0 34%,rgba(0,0,0,.86) 52%,rgba(0,0,0,0) 72%);
+  opacity:0;
+}
+#fall.on .fall__hole{animation:holeOpen 3.4s ease-in .35s forwards}
+@keyframes holeOpen{
+  0%{opacity:0;scale:.7}
+  55%{opacity:1;scale:1}
+  100%{opacity:1;scale:1.12}
+}
+
+.fall__title{
+  position:absolute;top:13vh;left:50%;translate:-50% 0;
+  width:min(80vw,760px);height:auto;z-index:2;
   filter:drop-shadow(0 18px 40px rgba(0,0,0,.9));
   opacity:0;
-  will-change:opacity, transform;
 }
-.losscut__kurumi{
-  z-index:3;
-  position:absolute;left:50%;top:50%;
-  width:min(64vw,680px);height:auto;
-  filter:drop-shadow(0 40px 90px rgba(0,0,0,.85)) saturate(.92);
-  will-change:transform, opacity;
+#fall.on .fall__title{animation:titleSlam 1.1s cubic-bezier(.16,1,.3,1) .45s forwards}
+@keyframes titleSlam{
+  0%{opacity:0;scale:1.7;filter:blur(18px) drop-shadow(0 18px 40px rgba(0,0,0,.9))}
+  55%{opacity:1}
+  100%{opacity:1;scale:1;filter:blur(0) drop-shadow(0 18px 40px rgba(0,0,0,.9))}
 }
-.losscut__blackout{z-index:4;position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
 
-/* 颜料往下淌。
-   动画里的转场是液体颜料喷在背景上，亏钱的时候变成暗红并且一直往下流。
-   这里用纯 CSS 做「残留」：八道粗细不一的血痕，速度与延迟都不同，
-   看起来像已经干了一半。 */
-.drips{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1;opacity:.75}
-.drips i{
-  position:absolute;top:-14vh;display:block;
-  width:var(--w,8px);height:var(--h,30vh);
-  border-radius:0 0 50% 50%/0 0 22px 22px;
-  background:linear-gradient(180deg,#7E0C16,#4A050C 70%,#320308);
-  box-shadow:0 0 22px rgba(160,10,24,.45);
-  animation:dripDown var(--dur,12s) linear var(--delay,0s) infinite;
-  filter:blur(.4px);
+/* 久留美：淡入 → 被吸向中心并缩小 → 没入黑场。
+   注意是 translate 下沉 + scale，没有「从下往上平移」的入场。 */
+.fall__kurumi{
+  position:absolute;left:50%;top:50%;z-index:3;
+  width:min(66vw,640px);height:auto;
+  filter:drop-shadow(0 40px 90px rgba(0,0,0,.9)) saturate(.9);
+  opacity:0;translate:-50% -50%;
 }
-.drips i::after{
-  content:"";position:absolute;left:50%;bottom:-5px;translate:-50% 0;
-  width:calc(var(--w,8px) * 1.7);height:calc(var(--w,8px) * 1.7);border-radius:50%;
-  background:#3D040A;
+#fall.on .fall__kurumi{animation:suckedIn 3.2s cubic-bezier(.5,0,.75,0) .55s forwards}
+@keyframes suckedIn{
+  0%{opacity:0;translate:-50% -50%;scale:1.02;rotate:0deg}
+  14%{opacity:1}
+  62%{opacity:1;translate:-50% -46%;scale:.72;rotate:-4deg}
+  100%{opacity:0;translate:-50% -18%;scale:.14;rotate:-16deg}
 }
-@keyframes dripDown{
-  0%{translate:0 0;opacity:0}
-  6%{opacity:1}
-  88%{opacity:1}
-  100%{translate:0 128vh;opacity:0}
-}
-@media (prefers-reduced-motion:reduce){.drips{display:none}}
-.losscut__copy{
-  z-index:5;
-  position:absolute;left:0;right:0;bottom:8vh;text-align:center;padding:0 24px;
-  font-family:var(--mono);color:#C9BFC0;
-}
-.losscut__line{font-size:clamp(14px,1.6vw,17px);opacity:0;translate:0 12px;transition:opacity .8s, translate .8s;letter-spacing:.02em}
-.losscut__line.on{opacity:1;translate:0 0}
-.losscut__line.small{font-size:clamp(11px,1.1vw,13px);color:#B3A4A8;margin-top:10px;letter-spacing:.06em}
+
 @media (max-width:640px){
-  .losscut__title{width:88vw;top:12vh}
-  .losscut__kurumi{width:82vw}
-  .losscut__copy{bottom:15vh}
+  .fall__title{width:88vw;top:11vh}
+  .fall__kurumi{width:86vw}
+}
+
+/* =================================================================
+   11 GLITCH · 故障转场
+   用 backdrop-filter 反相切条：切片位移时采样到的背景跟着位移，
+   看起来就是画面被撕开，而不是盖了一层黑条。
+   ================================================================= */
+#glitchFX{
+  position:fixed;inset:0;z-index:170;pointer-events:none;display:none;
+}
+#glitchFX.on{display:block}
+#glitchFX i{
+  position:absolute;left:-10%;right:-10%;height:5.5vh;
+  backdrop-filter:invert(1) hue-rotate(180deg) saturate(3) contrast(1.5);
+  -webkit-backdrop-filter:invert(1) hue-rotate(180deg) saturate(3) contrast(1.5);
+  opacity:1;
+}
+#glitchFX.on i:nth-child(1){top:7vh;animation:sliceA .5s steps(2) 1}
+#glitchFX.on i:nth-child(2){top:19vh;animation:sliceB .5s steps(3) .02s 1}
+#glitchFX.on i:nth-child(3){top:31vh;animation:sliceA .5s steps(2) .06s 1}
+#glitchFX.on i:nth-child(4){top:44vh;animation:sliceB .5s steps(4) .01s 1}
+#glitchFX.on i:nth-child(5){top:57vh;animation:sliceA .5s steps(2) .09s 1}
+#glitchFX.on i:nth-child(7){top:68vh;animation:sliceB .5s steps(2) .07s 1}
+#glitchFX.on i:nth-child(8){top:89vh;animation:sliceA .5s steps(3) .03s 1}
+#glitchFX.on i:nth-child(6){top:79vh;animation:sliceB .5s steps(3) .04s 1}
+@keyframes sliceA{
+  0%{translate:0 0;opacity:0}
+  10%{opacity:1;translate:-11vw 0}
+  26%{opacity:.15;translate:7vw 0}
+  42%{opacity:1;translate:-4vw 0}
+  60%{opacity:.1;translate:2vw 0}
+  78%{opacity:.9;translate:-8vw 0}
+  100%{opacity:0;translate:0 0}
+}
+@keyframes sliceB{
+  0%{translate:0 0;opacity:0}
+  10%{opacity:.9;translate:9vw 0}
+  24%{opacity:1;translate:-13vw 0}
+  46%{opacity:.12;translate:3vw 0}
+  64%{opacity:.95;translate:-5vw 0}
+  82%{opacity:.2;translate:11vw 0}
+  100%{opacity:0;translate:0 0}
+}
+
+/* 画面本体也错位两下。不带这个，只有几条反色带在飘，读不出「故障」 */
+body.bugging main{animation:bugJitter .5s steps(1) 1}
+@keyframes bugJitter{
+  0%{transform:translateX(-16px)}
+  18%{transform:translateX(13px) skewX(-.7deg)}
+  34%{transform:translateX(-6px)}
+  52%{transform:translateX(18px) skewX(.5deg)}
+  70%{transform:translateX(-9px)}
+  86%{transform:translateX(4px)}
+  100%{transform:none}
+}
+@media (prefers-reduced-motion:reduce){
+  #glitchFX i{animation:none !important;opacity:0 !important}
+  body.bugging main{animation:none}
 }
 
 /* =================================================================
@@ -429,68 +556,29 @@ h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;line-height:1.2;font-w
 .panel figcaption{font-size:10.5px;color:#5A5050;padding:8px 4px 9px;font-family:var(--mono);letter-spacing:.02em;line-height:1.5}
 @media (max-width:860px){.panel{max-width:240px;justify-self:start}}
 
-/* =================================================================
-   13 YOU · 「本页一直在数」
-   全页唯一一处使用读者自身真实数据的地方，也是最冷的一屏
-   ================================================================= */
-.you{}
-.readout{
-  position:relative;max-width:580px;margin:52px auto 0;
-  border:1px solid #2C1F24;border-radius:4px;
-  background:
-    repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px),
-    linear-gradient(180deg,rgba(140,18,32,.09),rgba(140,18,32,0) 70%);
-  box-shadow:0 30px 80px -40px #000, inset 0 1px 0 rgba(255,255,255,.03);
-  font-family:var(--mono);font-size:clamp(12px,1.5vw,14px);
+/* 颜料从正文后面穿过去，深色墨块压在深色字上会糊成一片。
+   给这一段的正文加一层与底色同色的光晕，等于给文字留了呼吸的白边。 */
+.burst-stage .kurumi-sub,
+.burst-stage .teacher-lead,
+.burst-stage .center .lead,
+.burst-stage .aside,
+.burst-stage .kicker{
+  text-shadow:0 0 3px var(--bg),0 0 8px var(--bg),0 0 20px var(--bg),0 0 34px var(--bg);
 }
-.readout::before{
-  content:"● REC   SESSION LOG";
-  display:block;padding:11px 16px;
-  font:700 10px var(--mono);letter-spacing:.2em;color:#B7243A;
-  border-bottom:1px solid #2C1F24;
-  animation:recBlink 2.4s steps(1) infinite;
-}
-@keyframes recBlink{0%,70%{opacity:1}71%,85%{opacity:.45}86%,100%{opacity:1}}
-.readout__row{
-  display:flex;justify-content:space-between;align-items:baseline;gap:16px;
-  padding:13px 16px;border-bottom:1px solid #241A1E;
-}
-.readout__row:last-child{border-bottom:0}
-.readout::after{
-  content:"▊";display:block;padding:2px 16px 12px;color:#B7243A;font-size:12px;
-  animation:blink 1.1s steps(1) infinite;
-}
-.readout__row span{color:#7C6A6E;letter-spacing:.08em}
-.readout__row b{
-  color:#EFE2E2;font-weight:600;font-variant-numeric:tabular-nums;
-  text-align:right;font-size:clamp(13px,1.6vw,16px);
-}
-.readout__row b.hot{color:#E03A3A}
-.you-line{
-  max-width:580px;margin:24px auto 0;font-family:var(--mono);
-  font-size:clamp(12.5px,1.55vw,14.5px);line-height:1.9;color:#DCC6C8;
-  text-align:center;opacity:0;transition:opacity 1.2s;
-}
-.you-line.on{opacity:1}
-.you-note{
-  margin-top:30px;text-align:center;font-size:13px;line-height:2;color:#6E5C60;
-}
-.you-note b{color:#E03A3A;font-weight:700;font-size:15px;letter-spacing:.08em}
 
 /* ---------- WARNING ---------- */
-.official-warning{max-width:800px;margin:52px auto 0;background:var(--card);border:2px solid var(--accent);border-radius:20px;padding:40px;text-align:center}
-.warn-badge{font-size:48px;color:var(--accent);margin-bottom:18px}
-.official-warning p{font-family:var(--serif);font-size:19px;line-height:1.9}
-.official-warning small{display:block;margin-top:20px;font-size:12px;color:var(--muted)}
-
-/* ---------- TRUTH ---------- */
-.truth-title{font-size:clamp(36px,6.2vw,72px);line-height:1.18;font-family:var(--serif);font-weight:700}
-.truth-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:60px;text-align:left}
-.fact{border-top:2px solid var(--line);padding-top:20px}
-.fact b{display:block;font-family:var(--mono);font-size:40px;color:var(--accent);margin-bottom:10px}
-.fact span{font-size:16px;color:var(--muted);line-height:1.75}
-@media (max-width:760px){.truth-facts{grid-template-columns:1fr}}
-.fact-note{margin-top:26px;font-size:13.5px;color:var(--muted);line-height:1.7;max-width:620px;margin-inline:auto;opacity:.9}
+.official-warning{
+  max-width:760px;margin:0 auto;
+  background:color-mix(in srgb, var(--fg) 7%, transparent);
+  border:2px solid var(--accent);border-radius:20px;
+  padding:52px 44px;text-align:center;
+}
+.warn-badge{font-size:52px;line-height:1;color:var(--accent);margin-bottom:22px}
+.official-warning p{font-family:var(--serif);font-size:clamp(17px,2.1vw,21px);line-height:2}
+.official-warning small{display:block;margin-top:24px;font-size:12.5px;color:var(--muted)}
+@media (max-width:560px){
+  .official-warning{padding:36px 22px}
+}
 
 /* =================================================================
    15 LOG · 券商系统日志
@@ -632,16 +720,8 @@ body.horror-mode #navCta{background:var(--accent)}
    移动端覆盖必须放在文件末尾，否则会被后声明的 left 覆盖掉。 */
 
 /* ---------- OVERLAYS ---------- */
-/* 颜料转场层。放在内容之上、惊吓层之下 */
-/* 颜料转场层。
-   注意是 z-index:-1 —— 它被夹在「页面底色」和「正文」之间，
-   所以颜料是在墙上游走，而不是盖在文字上。
-   正因如此，下面几段的实色背景必须去掉，否则会把这一层整个挡住。 */
-#paint{
-  position:fixed;inset:0;width:100%;height:100%;pointer-events:none;
-  z-index:-1;
-  opacity:1;
-}
+/* 颜料不再是一个全屏固定层，而是每段自己的一张画布（见文件上方 canvas.burst）。
+   原因是 fixed 的转场在滚动时完全不动，像贴纸；画在段落里才会跟着墙面走。 */
 #noise{
   position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:60;
   opacity:0;mix-blend-mode:soft-light;
@@ -749,7 +829,10 @@ html[data-theme="dark"] .sensei img{background:#1e293b;border-color:#334155}
   html{scroll-behavior:auto}
   .twitch{transform:none !important}
   #scare img{animation:none;transform:scale(1.1)}
-  .losscut__vortex{transform:none !important}
+  /* 坠落照放，但直接把角色定在画面中央，不做吸入动画 */
+  #fall.on .fall__kurumi{animation:none;opacity:1;translate:-50% -50%;scale:1}
+  #fall.on .fall__vortex{animation:none;opacity:.55}
+  #fall.on .fall__hole{animation:none;opacity:1}
 }
 
 /* =================================================================

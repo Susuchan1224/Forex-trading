@@ -345,8 +345,7 @@ let pendingBust = false;
 let titleLockUntil = 0;
 
 const BOOT_AT = Date.now();
-const sectionMs = {};          // 每个 section 累计停留
-let lastSectionAt = BOOT_AT;
+let currentSecEl = null;
 let peakY = 0;
 let backScrolls = 0;
 
@@ -366,11 +365,28 @@ function frame() {
   let i = secs.findIndex(s => s.offsetTop + s.offsetHeight > mid);
   if (i < 0) i = secs.length - 1;
   const s = secs[i], n = secs[Math.min(i + 1, secs.length - 1)];
+  currentSecEl = s;
 
-  const p = clamp((((mid - s.offsetTop) / s.offsetHeight) - .55) / .45);
+  // data-tfade 控制「与下一段混色」从本段的百分之几开始。
+  // 默认 .55（最后 45% 才开始变）；「真实交易者心态」设成 .18，
+  // 于是它从一进屏就开始往黑里沉，而不是滚到边界突然换色。
+  const fstart = Math.min(.9, Math.max(0, +(s.dataset.tfade || .55)));
+  const p = clamp((((mid - s.offsetTop) / s.offsetHeight) - fstart) / (1 - fstart));
   let bgC = mix(s.dataset.bg, n.dataset.bg, p);
-  let fgC = mix(s.dataset.fg, n.dataset.fg, p);
   let acC = mix(s.dataset.ac, n.dataset.ac, p);
+
+  /**
+   * 文字色滞后于底色，是这里唯一必须打的一个补丁。
+   *
+   * 线性同时插值的话，浅底深字 → 深底浅字 会在中途撞在一起：
+   * #D3D9E8→#141A24 走到 50% 是 #787e8b，#16213A→#E2E8F0 走到 50% 是 #778091
+   * —— 几乎同一个颜色，正文直接消失（实测对比度 1.0:1）。
+   *
+   * 让前景色只走后半段就没这个问题：等到它开始变亮时，
+   * 天色层已经压得很暗，字是在深底上变亮，反而越变越清楚。
+   */
+  const fp = clamp((p - .55) / .45);
+  let fgC = mix(s.dataset.fg, n.dataset.fg, fp);
 
   /**
    * 回顶后的「世界翻转」。
@@ -408,14 +424,11 @@ function frame() {
 
   const titles = [
     [0,   'Kurumi FX 学院 · 轻松赚回 2000 万'],
-    [.26, 'Kurumi FX · 关于讲师'],
-    [.42, 'Kurumi FX · 03:14'],
-    [.50, 'Kurumi FX · 今晚'],
-    [.58, 'Kurumi FX · 再等等'],
-    [.66, 'Kurumi · 强制平仓'],
-    [.74, 'kurumi — 系统日志'],
-    [.82, 'kurumi — 你的记录'],
-    [.93, '这不是投资'],
+    [.31, 'Kurumi FX · 关于讲师'],
+    [.47, 'Kurumi FX · 亏损的时候'],
+    [.60, 'Kurumi FX · 行情回顾'],
+    [.80, 'kurumi — 系统日志'],
+    [.90, 'kurumi — 风险提示'],
     [1,   '别成为下一个久留美']
   ];
   let tt = titles[0][1];
@@ -425,9 +438,6 @@ function frame() {
 
   const id = s.id || `sec-${i}`;
   if (id !== currentSection) {
-    const now = Date.now();
-    sectionMs[currentSection] = (sectionMs[currentSection] || 0) + (now - lastSectionAt);
-    lastSectionAt = now;
     currentSection = id;
     track('section_enter', id);
   }
@@ -435,12 +445,10 @@ function frame() {
   if (D > .96 && !statsLoaded) { statsLoaded = true; loadStats(); }
   if (D > .95) witnessedBottom = true;
 
-  checkSplashes();
-  updateNotify();
+  checkBursts();
   updateChart();
-  updateLosscut();
+  updateAtmos();
   updateLog();
-  updateYou();
   updateWhisperAnchor();
   updateDeepMode();
 
@@ -448,8 +456,37 @@ function frame() {
   updateAudio();
 }
 
+/**
+ * 气氛层：两段各自的「不对劲」。
+ *  - 真实交易者心态：天色一路沉下去，颗粒同时变浓
+ *  - 行情回顾：色差随进度拉开，颗粒更重
+ * 都只是写 CSS 变量 / opacity，不新增定时器，每帧成本可忽略。
+ */
+const mindSec = $('#mindset');
+const chartSec = $('#chart');
+const duskEl = mindSec && mindSec.querySelector('.dusk');
+const mindGrain = mindSec && mindSec.querySelector('.grain');
+const chartPanel = $('#chartPanel');
+const chartGrain = chartSec && chartSec.querySelector('.grain');
+
+function updateAtmos() {
+  if (mindSec) {
+    const r = mindSec.getBoundingClientRect();
+    const k = clamp((-r.top + innerHeight * .10) / Math.max(1, r.height - innerHeight * .28));
+    if (duskEl) duskEl.style.opacity = k.toFixed(3);
+    if (mindGrain) mindGrain.style.opacity = (k * .55).toFixed(3);
+  }
+  if (chartSec) {
+    const r = chartSec.getBoundingClientRect();
+    // 和上面同样的算法：这一段比视口矮，用视口高度当分母会在进屏瞬间就拉满
+    const k = clamp((-r.top + innerHeight * .08) / Math.max(1, r.height - innerHeight * .26));
+    if (chartPanel) chartPanel.style.setProperty('--ca', (k * 3.4).toFixed(2) + 'px');
+    if (chartGrain) chartGrain.style.opacity = (k * .42).toFixed(3);
+  }
+}
+
 /** 深度区：隐藏营销导航与悬浮控件 */
-const DEEP_SECS = ['#losscut', '#log'];
+const DEEP_SECS = ['#log'];
 function updateDeepMode() {
   const deep = DEEP_SECS.some(sel => {
     const el = document.querySelector(sel);
@@ -469,7 +506,7 @@ addEventListener('scroll', () => {
   if (scrollY > peakY) peakY = scrollY;
   else if (peakY - scrollY > 250) { backScrolls++; peakY = scrollY; }
 }, { passive: true });
-addEventListener('resize', () => { frame(); sizeNoise(); sizePaint(); });
+addEventListener('resize', () => { frame(); sizeNoise(); resizeBursts(); });
 
 /* ---------------- 4.1 噪点 ---------------- */
 
@@ -565,7 +602,7 @@ function updateWhisperAnchor() {
   // 恐惧值不足时清掉残留的低语（程序化滚动不会触发 pointermove）
   if (D < .45) whisperEl.classList.remove('on');
 
-  const dense = ['#notify', '#chart', '#losscut', '#log', '#you', '#end', '.kurumi-stage'];
+  const dense = ['#chart', '#log', '#warning', '#end', '.kurumi-stage'];
   const collide = dense.some(id => {
     const el = $(id);
     if (!el) return false;
@@ -576,54 +613,71 @@ function updateWhisperAnchor() {
 }
 
 /* =================================================================
-   5. 颜料转场
+   5. 颜料转场（画在段落自己的背景上）
    -----------------------------------------------------------------
-   参考原作 OP 的转场：不是「模糊色块铺满屏幕」，而是
-     · 黑底上极锐利的不透明颜料块，大小差异极大
-     · 被甩出来的细长液体丝线，末端带一颗珠子
+   参考原作 OP 的转场：不是模糊色块铺满屏幕，而是
+     · 极锐利的不透明颜料块，大小差异极大
+     · 被甩出来的细长液体丝线，末端挂一颗珠子
      · 大量细小的飞溅颗粒，密度沿喷射方向衰减
      · 颜料「挂」在画面上停一会儿，然后才开始消失
-   所以这里分三层画：颜料块（不规则多边形 + 二次曲线平滑）、
-   拖丝（沿贝塞尔采样成锥形）、颗粒。整层先画进离屏缓冲，
-   再统一淡出 —— 这样颜料是真的「留在墙上」，而不是每帧随机闪烁。
 
-   配色由调用方决定：同一个效果，前半段是糖纸色，后半段是血色。
+   与上一版最大的区别是画布的位置：上一版是 position:fixed 的全屏层，
+   滚轮滚了半天它一动不动，看起来像贴在屏幕前的一张纸。
+   现在每个段落自己持有一张绝对定位的画布 —— 颜料是喷在这一屏的墙上，
+   会跟着段落一起滚走。
+
+   喷射源也变了：不再是一个中心点，而是「左右各喷一次」，
+   两道从段落两侧向内对撞。
    ================================================================= */
-
-const paintEl = $('#paint');
-const pctx = paintEl.getContext('2d');
-let paintBuf = document.createElement('canvas');
-let bctx = paintBuf.getContext('2d');
-let splashToken = 0;
 
 const TAU = Math.PI * 2;
 
 /**
- * 调色板。
- * veil 是转场时压住页面的底色 —— 必须是深的。
- * 早期版本用同色系亮色当 veil，结果整屏变成一层粉色滤镜，
- * 而原作是「黑底上的彩色颜料」：底色越暗，颜料才越跳。
+ * 调色板。veil 现在一律是 0 —— 画布在正文之下、页面底色之上，
+ * 再压一层半透明色罩只会把浅色段的文字压灰，没有任何收益。
  */
 const PALETTES = {
-  bright: { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#FF8A3D'], w: [.46, .22, .14, .1, .08], veil: '#2A1220', veilA: .52, drip: false },
-  // 混进一块脏红：还是糖纸色，但有一个颜色不对
-  wrong:  { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#6E0C14'], w: [.38, .2, .12, .1, .2], veil: '#241020', veilA: .55, drip: false },
-  red:    { colors: ['#E03A3A', '#C8102E', '#8C0F1C', '#5C0A12'], w: [.34, .3, .22, .14], veil: '#240508', veilA: .60, drip: true },
-  blood:  { colors: ['#C8102E', '#A3140B', '#8C0F1C', '#5C0A12'], w: [.32, .3, .24, .14], veil: '#1A0306', veilA: .66, drip: true }
+  // 05 学员故事：糖纸色，全页最"快乐"的一屏
+  bright: { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#FF8A3D'], w: [.40, .22, .16, .12, .10] },
+  // 06 讲师：还是糖纸色，但混了一块脏红 —— 第一个不对劲
+  wrong:  { colors: ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#6E0C14'], w: [.36, .22, .16, .13, .13] },
+  // 09 行情崩盘：只剩血色
+  red:    { colors: ['#E03A3A', '#C8102E', '#8C0F1C', '#5C0A12'], w: [.34, .3, .22, .14], drip: true }
 };
 
-function sizePaint() {
-  paintEl.width = innerWidth;
-  paintEl.height = innerHeight;
-  paintBuf.width = innerWidth;
-  paintBuf.height = innerHeight;
-  bctx = paintBuf.getContext('2d');
+const CONFETTI_COLORS = ['#FF4D6D', '#FFC93C', '#2EC4B6', '#7C5CFF', '#FF8A3D', '#FFFFFF'];
+
+/** 每个段落一张画布；尺寸随段落变化，重排时清空（转场本来就只发生一次） */
+function burstCanvas(sec) {
+  let c = sec.querySelector(':scope > canvas.burst');
+  if (!c) {
+    c = document.createElement('canvas');
+    c.className = 'burst';
+    c.setAttribute('aria-hidden', 'true');
+    sec.insertBefore(c, sec.firstChild);
+  }
+  const r = sec.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width));
+  const h = Math.max(1, Math.round(r.height));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return c;
 }
 
-/** 按权重取色，避免均匀随机导致五彩斑斓像糖果 */
+function resizeBursts() {
+  $$('.burst-stage > canvas.burst').forEach(c => {
+    const sec = c.parentElement;
+    const r = sec.getBoundingClientRect();
+    if (c.width !== Math.round(r.width) || c.height !== Math.round(r.height)) {
+      c.width = Math.max(1, Math.round(r.width));
+      c.height = Math.max(1, Math.round(r.height));
+    }
+  });
+}
+
+/** 按权重取色，避免均匀随机撒成五彩斑斓的糖果 */
 function pickColor(pal) {
   let r = Math.random();
-  for (let i = 0; i < pal.colors.length; i++) {
+  for (let i = 0; i < pal.w.length; i++) {
     r -= pal.w[i];
     if (r <= 0) return pal.colors[i];
   }
@@ -632,14 +686,14 @@ function pickColor(pal) {
 
 /**
  * 一块颜料：极坐标上抖动的多边形 + 二次曲线过中点平滑。
- * 抖动幅度故意放大（0.42~1.6），否则每块都长成同一颗糖豆。
+ * 抖动幅度故意放大，否则每块都长成同一颗糖豆。
  */
-function paintBlob(ctx, x, y, r, ang, stretch, color, irregular = 1) {
+function paintBlob(ctx, x, y, r, ang, stretch, color) {
   const n = 8 + (r > 58 ? 6 : 0) + (Math.random() * 6 | 0);
   const pts = [];
   for (let i = 0; i < n; i++) {
     const a = i / n * TAU + (Math.random() - .5) * .5;
-    const rr = r * (1 - .42 * irregular + Math.random() * 1.2 * irregular);
+    const rr = r * (.58 + Math.random() * 1.2);
     const lx = Math.cos(a) * rr * stretch;
     const ly = Math.sin(a) * rr;
     pts.push([
@@ -659,7 +713,7 @@ function paintBlob(ctx, x, y, r, ang, stretch, color, irregular = 1) {
 
   // 朝来向拖一条尾 —— 这是「液体」和「色块」最大的区别
   if (stretch > 1.15) {
-    const tl = r * (0.9 + Math.random() * 2.4) * stretch;
+    const tl = r * (.9 + Math.random() * 2.4) * stretch;
     const back = ang + Math.PI;
     const side = Math.PI / 2;
     ctx.beginPath();
@@ -679,7 +733,7 @@ const qbez = (p0, p1, p2, t) => {
   ];
 };
 
-/** 拖丝：沿贝塞尔采样成锥形，由粗到细，尾巴挂一颗珠子 */
+/** 拖丝：沿贝塞尔采样成锥形，由粗到细，末端挂一颗珠子 */
 function filament(ctx, x0, y0, ang, len, w, color, curl) {
   const a = ang + curl;
   const p0 = [x0, y0];
@@ -712,118 +766,217 @@ function filament(ctx, x0, y0, ang, len, w, color, curl) {
   ctx.fill();
 }
 
+/** 彩带：从标题处像礼炮一样炸出去，之后受重力下坠、旋转、飘摆 */
+function makeConfetti(cx, cy, count) {
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.0;
+    const sp = 260 + Math.random() * 520;
+    list.push({
+      x: cx + (Math.random() - .5) * 40,
+      y: cy + (Math.random() - .5) * 12,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      w: 3.6 + Math.random() * 3.6,
+      l: 12 + Math.random() * 18,
+      rot: Math.random() * TAU,
+      vr: (Math.random() - .5) * 9,
+      ph: Math.random() * TAU,
+      curl: Math.random() < .28,
+      col: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)]
+    });
+  }
+  return list;
+}
+
+function stepConfetti(list, dt, W, H) {
+  const g = 900;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const c = list[i];
+    c.vy += g * dt;
+    c.vx *= .995;
+    c.vy *= .995;
+    c.x += (c.vx + Math.sin(c.ph + c.y * .02) * 40) * dt;
+    c.y += c.vy * dt;
+    c.rot += c.vr * dt;
+    if (c.y > H + 40 || c.x < -60 || c.x > W + 60) list.splice(i, 1);
+  }
+}
+
+function drawConfetti(ctx, list, alpha) {
+  if (!list.length) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (const c of list) {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
+    if (c.curl) {
+      ctx.strokeStyle = c.col;
+      ctx.lineWidth = c.w;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, -c.l / 2);
+      ctx.quadraticCurveTo(c.w * 2.6, 0, 0, c.l / 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = c.col;
+      ctx.fillRect(-c.w / 2, -c.l / 2, c.w, c.l);
+      // 一圈极淡的暗边：不然彩带落在同色的颜料上就看不见了
+      ctx.strokeStyle = 'rgba(20,16,26,.28)';
+      ctx.lineWidth = .8;
+      ctx.strokeRect(-c.w / 2, -c.l / 2, c.w, c.l);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+let burstToken = 0;
+
 /**
  * 一次转场。
  *
- * 密度分布是关键：早期版本用均匀随机，结果全屏撒得像彩纸。
- * 现在按指数衰减堆在喷射源附近 —— 近处是几个大团块叠成的一整片，
- * 远处只剩零星的小点和拖丝，这才是「喷」出来的样子。
- *
- * 每一块都有出生时间，按序永久画进离屏缓冲，所以颜料是真的挂在墙上，
- * 主画布每帧只做「底色 + 缓冲 + 淡出」。
+ * @param key     调色板
+ * @param opts.target    目标段落选择器（默认取当前视口所在段落）
+ * @param opts.confetti  从哪个元素的位置发射彩带（学员故事用）
  */
 function splash(key, opts = {}) {
-  const pal = PALETTES[key] || PALETTES.bright;
-  if (REDUCED_MOTION) { flashScreen(pal.veil, .34, 320); return; }
+  if (REDUCED_MOTION) return;
+  const sec = opts.target
+    ? (typeof opts.target === 'string' ? $(opts.target) : opts.target)
+    : currentSecEl;
+  if (!sec) return;
 
-  const token = ++splashToken;
-  const W = paintEl.width, H = paintEl.height;
+  const pal = PALETTES[key] || PALETTES.bright;
+  const cv = burstCanvas(sec);
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
   if (!W || !H) return;
 
-  const BURST = opts.burst ?? 430;
-  const HOLD = opts.hold ?? 340;
+  const token = ++burstToken;
+  const BURST = opts.burst ?? 470;
+  const HOLD = opts.hold ?? 600;
   const FADE = opts.fade ?? 620;
-  const total = BURST + HOLD + FADE;
+  const paintTotal = BURST + HOLD + FADE;
 
-  bctx.clearRect(0, 0, W, H);
-
-  // 喷射源：靠近某条边，朝画面内侧
-  const side = Math.random() < .5 ? -1 : 1;
-  const ox = W * (0.5 + side * (0.3 + Math.random() * 0.14));
-  const oy = H * (0.26 + Math.random() * 0.48);
-  const dir = Math.atan2(H * .5 - oy, W * .5 - ox) + (Math.random() - .5) * .4;
-  const maxR = Math.hypot(W, H) * .9;
+  // 离屏缓冲：颜料按出生时间永久画进来，之后只做整层淡出，
+  // 所以它是真的「挂」在墙上，而不是每帧重新随机
+  const buf = document.createElement('canvas');
+  buf.width = W; buf.height = H;
+  const bctx = buf.getContext('2d');
 
   const queue = [];
-  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * .9;
+  const push = (at, size, draw) => queue.push({ at, size, draw });
 
-  // 每一层：数量、距离分布、半径范围、角扩散
-  const layers = [
-    { n: 24, dExp: 2.2, dMul: .36, rMin: 30, rMax: 88, spread: .34, tMul: .55 },
-    { n: 34, dExp: 1.8, dMul: .62, rMin: 14, rMax: 52, spread: .55, tMul: .72 },
-    { n: 54, dExp: 1.35, dMul: 1.0, rMin: 4, rMax: 16, spread: .85, tMul: .88 },
-    { n: 115, dExp: 1.7, dMul: .92, rMin: .8, rMax: 3.4, spread: 1.0, tMul: 1 }
-  ];
+  /** 一发喷射：从 (ox,oy) 朝 dir 方向甩出去 */
+  function spray(ox, oy, dir, delay) {
+    const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * .9;
+    const maxR = Math.hypot(W, H) * .86;
 
-  layers.forEach(L => {
-    for (let i = 0; i < L.n; i++) {
-      const k = Math.pow(Math.random(), L.dExp);
-      const dist = k * maxR * L.dMul;
-      const ang = dir + gauss() * L.spread * (.4 + k);
-      const x = ox + Math.cos(ang) * dist;
-      const y = oy + Math.sin(ang) * dist;
-      if (x < -160 || x > W + 160 || y < -160 || y > H + 160) continue;
-      const r = lerp(L.rMax, L.rMin, k) * (0.5 + Math.random() * 1.0);
-      const stretch = 1 + k * 2.1;
-      const color = pickColor(pal);
-      const at = 24 + k * BURST * L.tMul + Math.random() * 70;
-      if (L.rMin < 2) {
-        push(at, r, ctx => {
-          ctx.save();
-          ctx.translate(x, y);
-          ctx.rotate(ang);
-          ctx.beginPath();
-          ctx.ellipse(0, 0, r * (1.3 + k * 1.8), r, 0, 0, TAU);
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.restore();
-        });
-      } else {
-        push(at, r, ctx => paintBlob(ctx, x, y, r, ang, stretch, color));
+    const layers = [
+      { n: 18, dExp: 2.2, dMul: .34, rMin: 26, rMax: 84, spread: .38, tMul: .55 },
+      { n: 26, dExp: 1.8, dMul: .60, rMin: 12, rMax: 48, spread: .55, tMul: .72 },
+      { n: 44, dExp: 1.4, dMul: .92, rMin: 4, rMax: 15, spread: .82, tMul: .88 },
+      { n: 88, dExp: 1.7, dMul: .88, rMin: .9, rMax: 3.2, spread: 1.0, tMul: 1 }
+    ];
+
+    layers.forEach(L => {
+      for (let i = 0; i < L.n; i++) {
+        const k = Math.pow(Math.random(), L.dExp);
+        const dist = k * maxR * L.dMul;
+        const ang = dir + gauss() * L.spread * (.4 + k);
+        const x = ox + Math.cos(ang) * dist;
+        const y = oy + Math.sin(ang) * dist;
+        if (x < -180 || x > W + 180 || y < -180 || y > H + 180) continue;
+        const r = lerp(L.rMax, L.rMin, k) * (.5 + Math.random());
+        const stretch = 1 + k * 2.1;
+        const color = pickColor(pal);
+        const at = delay + 20 + k * BURST * L.tMul + Math.random() * 60;
+        if (L.rMin < 2) {
+          push(at, r, c => {
+            c.save();
+            c.translate(x, y);
+            c.rotate(ang);
+            c.beginPath();
+            c.ellipse(0, 0, r * (1.3 + k * 1.8), r, 0, 0, TAU);
+            c.fillStyle = color;
+            c.fill();
+            c.restore();
+          });
+        } else {
+          push(at, r, c => paintBlob(c, x, y, r, ang, stretch, color));
+        }
       }
-    }
-  });
+    });
 
-  // 拖丝：从大团块附近甩出去，短而粗，带卷曲
-  for (let i = 0; i < 26; i++) {
-    const k = Math.pow(Math.random(), 1.9);
-    const ang = dir + gauss() * .7;
-    const d0 = k * maxR * .3;
-    const x0 = ox + Math.cos(ang) * d0;
-    const y0 = oy + Math.sin(ang) * d0;
-    const len = 60 + Math.random() * 300 * (1 - k * .5);
-    const w = 1.4 + Math.random() * 6.5;
-    const curl = (Math.random() - .5) * 2.4;
-    const color = pickColor(pal);
-    const at = 40 + Math.random() * BURST * .55;
-    push(at, w, ctx => filament(ctx, x0, y0, ang, len, w, color, curl));
+    // 拖丝
+    for (let i = 0; i < 18; i++) {
+      const k = Math.pow(Math.random(), 1.9);
+      const ang = dir + gauss() * .62;
+      const d0 = k * maxR * .28;
+      const len = 70 + Math.random() * 320 * (1 - k * .5);
+      const w = 1.4 + Math.random() * 6.5;
+      const curl = (Math.random() - .5) * 2.4;
+      const color = pickColor(pal);
+      push(delay + 34 + Math.random() * BURST * .55, w,
+        c => filament(c, ox + Math.cos(ang) * d0, oy + Math.sin(ang) * d0, ang, len, w, color, curl));
+    }
   }
 
-  function push(at, size, draw) { queue.push({ at, size, draw }); }
+  // 左右各一次。高度对准标题：段落可能比视口高得多（手机上尤其），
+  // 固定按段落 40% 喷，颜料会全落在屏幕外面。
+  let midY = H * (opts.y ?? .40);
+  if (opts.ref) {
+    const ref = $(opts.ref);
+    if (ref) {
+      const cr = cv.getBoundingClientRect();
+      const rr = ref.getBoundingClientRect();
+      if (rr.height) midY = clamp(rr.top - cr.top + rr.height * .5, H * .14, H * .8);
+    }
+  }
+  spray(-W * .03, midY, 0 + (Math.random() - .5) * .16, 0);
+  spray(W * 1.03, midY, Math.PI + (Math.random() - .5) * .16, 70);
 
   queue.sort((a, b) => a.at - b.at || b.size - a.size);
 
+  // 彩带：从标题处向上炸开
+  let confetti = [];
+  const confettiLife = opts.confetti ? 3000 : 0;
+  if (opts.confetti) {
+    const titleEl = $(opts.confetti);
+    if (titleEl) {
+      const cr = cv.getBoundingClientRect();
+      const tr = titleEl.getBoundingClientRect();
+      confetti = makeConfetti(
+        tr.left - cr.left + tr.width / 2,
+        tr.top - cr.top + tr.height * .7,
+        opts.confettiCount ?? 78
+      );
+    }
+  }
+
   // 下淌：只从真正有颜料的地方挂下来
-  const drips = !pal.drip ? [] : Array.from({ length: 10 }, () => {
-    const k = Math.pow(Math.random(), 1.7);
-    const ang = dir + gauss() * .5;
-    return {
-      x: ox + Math.cos(ang) * k * maxR * .42,
-      y: oy + Math.sin(ang) * k * maxR * .42,
-      w: 5 + Math.random() * 13,
-      len: 50 + Math.random() * 210,
-      sp: .7 + Math.random() * .9,
-      c: pal.colors[pal.colors.length - 1]
-    };
-  });
+  const drips = !pal.drip ? [] : Array.from({ length: 9 }, () => ({
+    x: Math.random() * W,
+    y: midY * (.4 + Math.random() * .7),
+    w: 5 + Math.random() * 12,
+    len: 60 + Math.random() * 220,
+    sp: .7 + Math.random() * .9,
+    c: pal.colors[pal.colors.length - 1]
+  }));
 
+  const total = Math.max(paintTotal, confettiLife + 300);
   const t0 = performance.now();
-  let drawn = 0;
+  let drawn = 0, prev = t0;
 
-  (function frame(now) {
-    if (token !== splashToken) return;
+  (function loop(now) {
+    if (token !== burstToken) return;
     const t = now - t0;
-    if (t > total) { pctx.clearRect(0, 0, W, H); return; }
+    if (t > total) { ctx.clearRect(0, 0, W, H); return; }
+
+    const dt = Math.min(.05, (now - prev) / 1000);
+    prev = now;
 
     while (drawn < queue.length && queue[drawn].at <= t) {
       queue[drawn].draw(bctx);
@@ -831,118 +984,66 @@ function splash(key, opts = {}) {
     }
 
     const kf = clamp((t - BURST - HOLD) / FADE);
-    const veilA = pal.veilA * clamp(t / 140) * (1 - kf * .92);
 
-    pctx.clearRect(0, 0, W, H);
-    if (veilA > .002) {
-      pctx.globalAlpha = veilA;
-      pctx.fillStyle = pal.veil;
-      pctx.fillRect(0, 0, W, H);
-    }
-    pctx.globalAlpha = 1 - Math.pow(kf, 1.5) * .97;
-    pctx.drawImage(paintBuf, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = 1 - Math.pow(kf, 1.25);
+    ctx.drawImage(buf, 0, 0);
 
     // 往下淌：等颜料挂住之后才出现
-    if (t > BURST * .55) {
-      const kd = clamp((t - BURST * .55) / (total - BURST * .55));
-      pctx.globalAlpha = (1 - kf) * .92;
+    if (drips.length && t > BURST * .5) {
+      const kd = clamp((t - BURST * .5) / Math.max(1, total - BURST * .5));
+      ctx.globalAlpha = (1 - kf) * .9;
       drips.forEach(d => {
-        const y0 = d.y + kd * d.sp * H * 1.15;
+        const y0 = d.y + kd * d.sp * H * .75;
         const y1 = y0 + d.len;
-        if (y1 < 0) return;
-        const wB = d.w * .28;
-        pctx.fillStyle = d.c;
-        pctx.beginPath();
-        pctx.moveTo(d.x - d.w / 2, y0);
-        pctx.lineTo(d.x + d.w / 2, y0);
-        pctx.lineTo(d.x + wB / 2, y1);
-        pctx.lineTo(d.x - wB / 2, y1);
-        pctx.closePath();
-        pctx.fill();
-        pctx.beginPath();
-        pctx.arc(d.x, y1, wB * 1.05, 0, TAU);
-        pctx.fill();
+        const wB = d.w * .26;
+        ctx.fillStyle = d.c;
+        ctx.beginPath();
+        ctx.moveTo(d.x - d.w / 2, y0);
+        ctx.lineTo(d.x + d.w / 2, y0);
+        ctx.lineTo(d.x + wB / 2, y1);
+        ctx.lineTo(d.x - wB / 2, y1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(d.x, y1, wB * 1.05, 0, TAU);
+        ctx.fill();
       });
     }
+    ctx.globalAlpha = 1;
 
-    pctx.globalAlpha = 1;
-    requestAnimationFrame(frame);
+    if (confetti.length) {
+      stepConfetti(confetti, dt, W, H);
+      drawConfetti(ctx, confetti, 1 - Math.pow(clamp((t - confettiLife * .6) / (confettiLife * .4)), 1.4));
+    }
+
+    requestAnimationFrame(loop);
   })(t0);
 
   if (audio) splashSound();
-  track('splash_' + key);
+  track('burst_' + key);
 }
 
-
-
-/* 在哪里放转场：越靠后颜色越像血。
-   at 是触发阈值（相对视口高度）——#losscut 提前到 .82，
-   因为那一段是粘性全屏立绘，等它铺满屏幕就再也看不见背景了。 */
-const SPLASH_AT = {
-  '#success': { pal: 'bright', at: .46 },   // 糖纸色，全页最"快乐"的一屏
-  '#notify':  { pal: 'wrong',  at: .46 },   // 还是彩色，但混了一块脏红
-  '#losscut': { pal: 'blood',  at: .82 }    // 暗红，往下淌
+/* 进入这些段落时喷一次。颜色越靠后越像血。
+   #chart 的转场不在这里 —— 它要等那根长阴线落下来才喷（见 crashImpact）。 */
+const BURST_AT = {
+  '#success': { pal: 'bright', at: .40, confetti: '#successTitle', ref: '#successTitle' },
+  '#teacher': { pal: 'wrong',  at: .40, ref: '.kurumi-quote' }
 };
-const splashFired = {};
+const burstFired = {};
 
-function checkSplashes() {
-  for (const sel in SPLASH_AT) {
-    if (splashFired[sel]) continue;
-    const el = document.querySelector(sel);
+function checkBursts() {
+  for (const sel in BURST_AT) {
+    if (burstFired[sel]) continue;
+    const el = $(sel);
     if (!el) continue;
     const r = el.getBoundingClientRect();
-    const cfg = SPLASH_AT[sel];
+    const cfg = BURST_AT[sel];
     if (r.top < innerHeight * cfg.at && r.bottom > 0) {
-      splashFired[sel] = true;
-      splash(cfg.pal);
+      burstFired[sel] = true;
+      splash(cfg.pal, { target: sel, confetti: cfg.confetti, ref: cfg.ref });
     }
   }
-}
-
-/* =================================================================
-   6.1 通知堆栈 —— 今晚，你的手机
-   ================================================================= */
-const NOTES = [
-  { time: '21:04', app: 'Kurumi FX', ico: 'K', cls: '',      title: '入金已完成', text: '¥100,000 已入账。祝你交易顺利。' },
-  { time: '23:47', app: 'Kurumi FX', ico: 'K', cls: '',      title: '入金已完成', text: '¥300,000 已入账。<b>这笔钱是从哪来的？</b>' },
-  { time: '02:31', app: 'Kurumi FX', ico: '!', cls: 'warn',  title: '追加保证金通知', text: '需要入金 <b>¥84,200</b>。剩余时间 47 分钟。' },
-  { time: '03:14', app: 'Kurumi FX', ico: '!', cls: 'alert', title: '保证金维持率 96%', text: '已低于警戒线。持仓存在被强制平仓的风险。' },
-  { time: '03:16', app: 'Kurumi FX', ico: '×', cls: 'alert', title: '强制平仓已执行', text: '全部持仓已平仓。账户余额 <b>¥0</b>。' }
-];
-
-let notifyShown = -1;
-const npStack = $('#npStack');
-const npCount = $('#npCount');
-const npTime = $('#npTime');
-const npHint = $('#npHint');
-
-function updateNotify() {
-  const sec = $('#notify');
-  if (!sec || !npStack) return;
-  const p = stickyP(sec);
-  const k = p < .18 ? 0 : Math.min(NOTES.length, Math.ceil((p - .18) / .74 * NOTES.length));
-  if (k === notifyShown) return;
-  const grew = k > notifyShown;
-  notifyShown = k;
-
-  npStack.innerHTML = '';
-  NOTES.slice(0, k).forEach((nt, idx) => {
-    const el = document.createElement('div');
-    el.className = 'np-note ' + nt.cls;
-    el.innerHTML = `<div class="np-note__ico">${nt.ico}</div>
-      <div class="np-note__body">
-        <div class="np-note__top"><span>${nt.app}</span><span>${nt.time}</span></div>
-        <div class="np-note__title">${nt.title}</div>
-        <div class="np-note__text">${nt.text}</div>
-      </div>`;
-    npStack.appendChild(el);
-    requestAnimationFrame(() => setTimeout(() => el.classList.add('on'), 30 + idx * 8));
-  });
-  if (npCount) npCount.textContent = k;
-  if (npTime && k > 0) npTime.textContent = NOTES[k - 1].time;
-  // 最后一条落下后，才亮出「发送方是你」——这是整段唯一一句点破的话
-  if (npHint) npHint.classList.toggle('on', k >= NOTES.length);
-  if (grew && k > 0) tickSound(.03);
 }
 
 /* =================================================================
@@ -1051,10 +1152,13 @@ function revealCandles(count, atEdge) {
 
 function updateChart() {
   if (!CHART.data.length) return;
-  const panel = $('.chart-panel');
+  const panel = $('#chartPanel');
   if (!panel) return;
   const r = panel.getBoundingClientRect();
-  const local = clamp((innerHeight * .92 - r.top) / (innerHeight * .84));
+  // 用 .67 视口做分母：面板顶端升到视口 25% 处时正好全部揭示。
+  // 早期用 .84，结果要等面板快滑出屏幕才画完最后一根，
+  // 读者会在「还没看到崩盘」的时候被坠落转场打断。
+  const local = clamp((innerHeight * .92 - r.top) / (innerHeight * .67));
   const count = Math.round(local * CHART.N);
   if (count === CHART.revealed) return;
   CHART.revealed = count;
@@ -1078,16 +1182,28 @@ function updateChart() {
   // 会看到账户早就死了，最后一击就失效了。
   if (count >= CHART.N) {
     marketFrozen = true;
-    track('chart_complete');
+    if (!chartDone) {
+      chartDone = true;
+      track('chart_complete');
+      // 最后一根柱子落定之后才坠落。给读者半秒看清那根阴线有多长。
+      setTimeout(playFall, 800);
+    }
   }
 }
 
+let chartDone = false;
+
 function crashImpact() {
   crashSound();
-  splash('red', { cover: 320, hold: 90, fade: 640 });   // 这一根之后，转场的颜色变了
+  // 这一根之后，转场的颜色也变了 —— 糖纸色到此为止
+  splash('red', { target: '#chart', ref: '#chartPanel', burst: 460, hold: 900, fade: 900 });
   document.body.classList.add('shake');
   setTimeout(() => document.body.classList.remove('shake'), 460);
   flashScreen('#E03A3A', .13, 240);
+  if (chartPanel) {
+    chartPanel.classList.add('crashed');
+    setTimeout(() => chartPanel.classList.remove('crashed'), 1400);
+  }
   track('chart_crash');
 }
 
@@ -1102,68 +1218,66 @@ function flashScreen(color, opacity, ms) {
 }
 
 /* =================================================================
-   6.3 强制平仓
+   6.3 坠落：故障转场 → 淡入 → 掉进黑洞 → 淡出
+   -----------------------------------------------------------------
+   这一段不再是滚动驱动的舞台。上一版把立绘放进一个 240vh 的粘性区，
+   结果它是「随滚动从下往上推上来」的，像是滑进来的贴图。
+
+   现在它是一个只发生一次的事件：
+     故障转场（画面被切片撕开）
+       → 黑场淡入（0.85s，不是平移）
+       → 久留美被漩涡吸向中心（scale + 下沉）
+       → 整个黑场淡出，露出下一部分
+
+   因为不挂在滚动上，往回滚也不会重播 —— 这段只能看一次。
    ================================================================= */
 
-let losscutFired = false, lsLinesShown = -1;
+let fallDone = false;
+let glitching = false;
 
-function buildDrips() {
-  const box = $('#drips');
-  if (!box || box.childElementCount) return;
-  for (let i = 0; i < 9; i++) {
-    const el = document.createElement('i');
-    el.style.setProperty('--w', (3 + Math.random() * 9).toFixed(1) + 'px');
-    el.style.setProperty('--h', (18 + Math.random() * 42).toFixed(1) + 'vh');
-    el.style.setProperty('--dur', (9 + Math.random() * 9).toFixed(1) + 's');
-    el.style.setProperty('--delay', (-Math.random() * 12).toFixed(1) + 's');
-    el.style.left = (Math.random() * 100).toFixed(2) + '%';
-    el.style.opacity = (0.35 + Math.random() * 0.5).toFixed(2);
-    box.appendChild(el);
+/** 故障转场：切片反相 + 位移，结束时回调 */
+function glitchTV(done) {
+  const fx = $('#glitchFX');
+  if (!fx || REDUCED_MOTION) {
+    setTimeout(() => done && done(), 120);
+    return;
   }
+  if (glitching) { done && done(); return; }
+  glitching = true;
+  fx.classList.add('on');
+  document.body.classList.add('bugging');
+  crashSound();
+  setTimeout(() => document.body.classList.remove('shake'), 420);
+  setTimeout(() => {
+    fx.classList.remove('on');
+    document.body.classList.remove('bugging');
+    glitching = false;
+    done && done();
+  }, 560);
 }
 
-function updateLosscut() {
-  const sec = $('#losscut');
-  if (!sec) return;
-  const p = stickyP(sec);
-  const vortex = sec.querySelector('.losscut__vortex');
-  const title = $('#losscutTitle');
-  const kurumi = $('#losscutKurumi');
-  const black = $('#losscutBlack');
+function playFall() {
+  if (fallDone) return;
+  fallDone = true;
+  const el = $('#fall');
+  const log = $('#log');
 
-  if (vortex) vortex.style.transform = `scale(${(1.04 + p * .16).toFixed(3)}) rotate(${(p * 6).toFixed(2)}deg)`;
-
-  const tp = clamp((p - .10) / .10);
-  if (title) {
-    title.style.opacity = String(tp.toFixed(3));
-    title.style.transform = `scale(${lerp(1.55, 1, 1 - Math.pow(1 - tp, 3)).toFixed(3)})`;
-    title.style.filter = `blur(${lerp(12, 0, tp).toFixed(1)}px) drop-shadow(0 18px 40px rgba(0,0,0,.9))`;
-  }
-  if (!losscutFired && p > .12) {
-    losscutFired = true;
+  glitchTV(() => {
+    if (!el) return;
+    el.classList.add('on');
     crashSound();
-    document.body.classList.add('shake');
-    setTimeout(() => document.body.classList.remove('shake'), 460);
-    track('losscut_title');
-  }
+    track('fall_start');
 
-  if (kurumi) {
-    const k = clamp(p / .9);
-    kurumi.style.transform = `translate(-50%, ${lerp(-52, -38, k).toFixed(2)}%) scale(${lerp(.90, 1.06, k).toFixed(3)}) rotate(${(k * 3.2).toFixed(2)}deg)`;
-    kurumi.style.opacity = String(clamp((p - .02) / .12).toFixed(3));
-  }
+    // 幕布已经盖住画面，这时候把滚动位置挪到下一部分。
+    // 否则淡出时露出来的还是那张图表，「淡出到下一部分」就不成立。
+    if (log) scrollTo({ top: log.offsetTop + innerHeight * .55, behavior: 'instant' });
 
-  const n = p > .74 ? 3 : p > .58 ? 2 : p > .42 ? 1 : 0;
-  if (n !== lsLinesShown) {
-    lsLinesShown = n;
-    ['#lsLine1', '#lsLine2', '#lsLine3'].forEach((sel, i) => {
-      const el = $(sel);
-      if (el) el.classList.toggle('on', i < n);
-    });
-    if (n === 3) track('losscut_copy');
-  }
-
-  if (black) black.style.opacity = String(clamp((p - .86) / .14).toFixed(3));
+    setTimeout(() => {
+      el.classList.add('out');
+      track('fall_end');
+      setTimeout(() => el.classList.remove('on', 'out'), 1200);
+    }, 4300);
+  });
 }
 
 /* =================================================================
@@ -1178,80 +1292,12 @@ function updateLog() {
   if (!logLines) logLines = $$('#term .l');
   if (!logLines.length) return;
   const p = stickyP(sec);
-  const n = Math.min(logLines.length, Math.floor(p * (logLines.length + 2.2)));
+  // 至少先给一行：这一段是纯黑，一进来空空如也会像页面坏了
+  const n = Math.min(logLines.length, 1 + Math.floor(p * (logLines.length - 1) * 1.2));
   if (n === logShown) return;
   logShown = n;
   logLines.forEach((el, i) => el.classList.toggle('on', i < n));
   if (n >= logLines.length) track('log_end');
-}
-
-/* =================================================================
-   6.5 「你的记录」
-   -----------------------------------------------------------------
-   全页唯一使用读者真实数据的地方。它不说话，只报数。
-   最有效的一句是「你在强制平仓那一屏停了 41 秒」——因为这可能是真的。
-   ================================================================= */
-
-const SEC_LABEL = {
-  top: '课程首页', features: '课程特色', success: '学员故事',
-  teacher: '关于讲师', notify: '今晚的推送', chart: '行情回顾',
-  losscut: '强制平仓', log: '系统日志', you: '你的记录',
-  end: '最后的话'
-};
-
-let youLastFill = 0, youFilled = false;
-
-function sectionLabel(id) {
-  if (SEC_LABEL[id]) return SEC_LABEL[id];
-  const i = secs.findIndex(s => s.id === id);
-  return i >= 0 ? `第 ${i + 1} 屏` : '—';
-}
-
-function updateYou() {
-  const sec = $('#you');
-  if (!sec) return;
-  const r = sec.getBoundingClientRect();
-  if (r.top > innerHeight || r.bottom < 0) return;
-  const now = Date.now();
-  if (now - youLastFill < 900) return;
-  youLastFill = now;
-
-  const dwell = now - BOOT_AT;
-  const set = (sel, val, hot) => {
-    const el = $(sel);
-    if (!el) return;
-    el.textContent = val;
-    el.classList.toggle('hot', !!hot);
-  };
-
-  set('#youSession', sessionId ? '#' + sessionId.slice(0, 8).toUpperCase() : '本地');
-  set('#youClock', new Date().toLocaleTimeString('zh-CN', { hour12: false }));
-  set('#youDwell', mmss(dwell));
-  set('#youBack', backScrolls ? `${backScrolls} 次` : '0 次', backScrolls > 0);
-
-  // 停留最久的一屏（当前屏要补上未结算的时间）
-  const acc = { ...sectionMs };
-  acc[currentSection] = (acc[currentSection] || 0) + (now - lastSectionAt);
-  let topId = '', topMs = 0;
-  for (const id in acc) if (acc[id] > topMs) { topMs = acc[id]; topId = id; }
-  set('#youLongest', topId ? `${sectionLabel(topId)} · ${Math.round(topMs / 1000)} 秒` : '—', topId === 'losscut');
-
-  // 只陈述可核对的事实，不编造
-  const lineEl = $('#youLine');
-  if (lineEl) {
-    const lc = acc['losscut'] || 0;
-    const tr = acc['sec-14'] || acc['sec-15'] || 0;
-    let txt;
-    if (lc > 8000 && lc > tr) {
-      txt = `你在「强制平仓」那一屏停了 ${Math.round(lc / 1000)} 秒。比任何一屏都久。`;
-    } else if (backScrolls > 1) {
-      txt = `你往回滚了 ${backScrolls} 次。看第二遍不会改变结果。`;
-    } else {
-      txt = `你在这页已经停了 ${mmss(dwell)}。没有人催你。`;
-    }
-    if (lineEl.textContent !== txt) lineEl.textContent = txt;
-    if (!youFilled) { youFilled = true; setTimeout(() => lineEl.classList.add('on'), 700); }
-  }
 }
 
 /* =================================================================
@@ -1412,8 +1458,8 @@ function handleApply(e) {
     toast('开户失败：申请人风险测评未通过。');
     setTimeout(() => {
       btn.textContent = APPLY_TEXT[3];
-      const truth = $('#truth');
-      if (truth) scrollTo({ top: truth.offsetTop - 80, behavior: 'smooth' });
+      const warn = $('#warning');
+      if (warn) scrollTo({ top: warn.offsetTop - 60, behavior: 'smooth' });
       applyBusy = false;
       setTimeout(() => { btn.textContent = original; btn.style.background = ''; }, 4200);
     }, 1400);
@@ -1438,7 +1484,7 @@ $('#heroSound')?.addEventListener('click', () => { startAudio(); track('sound_on
 
 const scrollBtn = $('#scrollNext');
 scrollBtn?.addEventListener('click', () => {
-  const all = [...document.querySelectorAll('section[id], section.sec, section.losscut, section.log')];
+  const all = [...document.querySelectorAll('main > section')];
   const y = scrollY + innerHeight * .4;
   const next = all.find(s => s.offsetTop > y);
   if (next) {
@@ -1671,9 +1717,7 @@ function initReveal() {
 
 (function boot() {
   sizeNoise();
-  sizePaint();
   setInterval(drawNoise, 70);
-  buildDrips();
 
   renderChart();
   initReveal();
@@ -1703,19 +1747,21 @@ function initReveal() {
     get D() { return D; },
     get account() { return { ...ACCOUNT, ...derive() }; },
     get chart() { return CHART.data; },
-    get stats() { return { backScrolls, sectionMs: { ...sectionMs }, dwell: Date.now() - BOOT_AT }; },
+    get stats() { return { backScrolls, dwell: Date.now() - BOOT_AT }; },
     splash,
+    playFall,
+    glitchTV,
     resetAccount() {
       ACCOUNT.deposit = 300000; ACCOUNT.floatingPnl = 12450;
       ACCOUNT.usedMargin = 120000; ACCOUNT.state = 'profit';
       witnessedBottom = false; horrorRevealed = false;
-      CHART.fired = false; CHART.revealed = -1; losscutFired = false;
+      CHART.fired = false; CHART.revealed = -1; fallDone = false; chartDone = false;
       marketFrozen = false;
       document.body.classList.remove('horror-mode');
-      for (const k in splashFired) delete splashFired[k];
+      for (const k in burstFired) delete burstFired[k];
       initMarketHistory(); renderChart(); renderAccount();
     }
   };
   console.log('%cKurumi FX 学院', 'color:#2563EB;font-size:16px;font-weight:bold');
-  console.log('提示：__kurumi.D / __kurumi.account / __kurumi.stats / __kurumi.splash("blood") 可现场调；setLang("en") 预留英文模式。');
+  console.log('提示：__kurumi.D / __kurumi.account / __kurumi.splash("bright",{target:"#success",confetti:"#successTitle"}) 可现场调。');
 })();

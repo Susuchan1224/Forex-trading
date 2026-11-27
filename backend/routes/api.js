@@ -69,8 +69,9 @@ const ALLOWED_EVENTS = new Set([
   'lang_switch', 'hover_forever', 'quiz_answer',
   'abstain', 'leave', 'return', 'idle_whisper',
   'account_bust', 'horror_revealed', 'scroll_next_btn', 'theme_switch',
-  'apply_click', 'chart_crash', 'chart_complete', 'losscut_title',
-  'losscut_copy', 'log_end'
+  'apply_click', 'chart_crash', 'chart_complete', 'log_end',
+  // v4：转场与坠落。losscut_* 在 v4 里已随强制平仓段一起删除
+  'burst_bright', 'burst_wrong', 'burst_red', 'fall_start', 'fall_end'
 ]);
 
 /* ---------- 路由 ---------- */

@@ -22,7 +22,6 @@
 </button>
 
 <canvas id="noise" width="320" height="180" aria-hidden="true"></canvas>
-<canvas id="paint" aria-hidden="true"></canvas>
 <div id="vig" aria-hidden="true"></div>
 <div id="scan" aria-hidden="true"></div>
 <div id="whisper" aria-live="polite"></div>
@@ -91,8 +90,8 @@
   </div>
 </section>
 
-<!-- ========== 02 FEATURES · d=0.04 ========== -->
-<section id="features" class="sec" data-bg="#F4F8FD" data-fg="#0F172A" data-ac="#2563EB" data-d="0.04">
+<!-- ========== 02 FEATURES · d=0.05 ========== -->
+<section id="features" class="sec" data-bg="#F4F8FD" data-fg="#0F172A" data-ac="#2563EB" data-d="0.05">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="features.kicker">为什么选择 Kurumi</div>
@@ -119,8 +118,8 @@
   </div>
 </section>
 
-<!-- ========== 03 LEVERAGE · d=0.10 ========== -->
-<section class="sec" data-bg="#EDF4FC" data-fg="#0F172A" data-ac="#1D4ED8" data-d="0.10">
+<!-- ========== 03 LEVERAGE · d=0.11 ========== -->
+<section class="sec" data-bg="#EDF4FC" data-fg="#0F172A" data-ac="#1D4ED8" data-d="0.11">
   <div class="wrap split">
     <div>
       <div class="kicker" data-i18n="lev.kicker">杠杆的力量</div>
@@ -138,8 +137,8 @@
   </div>
 </section>
 
-<!-- ========== 04 TOOLS · d=0.15 ========== -->
-<section class="sec" data-bg="#E9F1FC" data-fg="#0F172A" data-ac="#1E40AF" data-d="0.15">
+<!-- ========== 04 TOOLS · d=0.17 ========== -->
+<section class="sec" data-bg="#E9F1FC" data-fg="#0F172A" data-ac="#1E40AF" data-d="0.17">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tools.kicker">专业工具</div>
@@ -155,12 +154,12 @@
   </div>
 </section>
 
-<!-- ========== 05 SUCCESS · d=0.20 — 色彩最饱和的一屏，之后就是下坡 ========== -->
-<section id="success" class="sec" data-bg="#E2ECF9" data-fg="#0F172A" data-ac="#2563EB" data-d="0.20">
+<!-- ========== 05 SUCCESS · d=0.23 — 色彩最饱和的一屏，转场也从这里开始 ========== -->
+<section id="success" class="sec burst-stage" data-bg="#E2ECF9" data-fg="#0F172A" data-ac="#2563EB" data-d="0.23">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="success.kicker">学员故事</div>
-      <h2 data-i18n="success.h2">他们已经赚到了第一桶金</h2>
+      <h2 id="successTitle" data-i18n="success.h2">他们已经赚到了第一桶金</h2>
     </div>
     <div class="grid3">
       <article class="card quote twitch">
@@ -183,8 +182,8 @@
   </div>
 </section>
 
-<!-- ========== 06 TEACHER · d=0.26 — 第一个不对劲，但不解释 ========== -->
-<section id="teacher" class="sec kurumi-stage" data-bg="#E4E7F3" data-fg="#141A2E" data-ac="#3D53A8" data-d="0.26">
+<!-- ========== 06 TEACHER · d=0.31 — 第一个不对劲，但不解释 ========== -->
+<section id="teacher" class="sec kurumi-stage burst-stage" data-bg="#E4E7F3" data-fg="#141A2E" data-ac="#3D53A8" data-d="0.31">
   <div class="wrap">
     <div class="teacher-grid">
       <div>
@@ -217,8 +216,8 @@
   </div>
 </section>
 
-<!-- ========== 07 TIPS · d=0.34 ========== -->
-<section class="sec" data-bg="#DDE3F0" data-fg="#16213A" data-ac="#35509E" data-d="0.34">
+<!-- ========== 07 TIPS · d=0.39 ========== -->
+<section class="sec" data-bg="#DDE3F0" data-fg="#16213A" data-ac="#35509E" data-d="0.39">
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="tips.kicker">进阶课程</div>
@@ -233,8 +232,10 @@
   </div>
 </section>
 
-<!-- ========== 08 MINDSET · d=0.42 ========== -->
-<section class="sec" data-bg="#D3D9E8" data-fg="#16213A" data-ac="#2C4A94" data-d="0.42">
+<!-- ========== 08 MINDSET · d=0.47 — 从这里开始变黑，不再回头 ========== -->
+<section id="mindset" class="sec" data-bg="#D3D9E8" data-fg="#16213A" data-ac="#2C4A94" data-d="0.47" data-tfade="0.40">
+  <div class="dusk" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="mindset.kicker">真实交易者心态</div>
@@ -249,33 +250,16 @@
   </div>
 </section>
 
-<!-- ========== 09 NOTIFY · d=0.50 — 今晚，你的手机 ========== -->
-<section class="sec night" id="notify" data-bg="#1B2230" data-fg="#DCE3EE" data-ac="#5B87C9" data-d="0.50">
-  <div class="wrap center">
-    <div class="kicker" data-i18n="notify.kicker">今晚</div>
-    <h2 data-i18n="notify.h2">这些通知会准时送到</h2>
-    <p class="lead" data-i18n="notify.lead">顺序不会错，时间也不会错。你只需要维持仓位。</p>
-  </div>
-  <div class="notify-stage" id="notifyStage">
-    <div class="notify-phone">
-      <div class="np-time" id="npTime">--:--</div>
-      <div class="np-round" id="npDate">今晚 · 你的设备</div>
-      <div class="np-stack" id="npStack" aria-live="polite"></div>
-      <div class="np-hint" id="npHint">发送方：您的交易账户</div>
-    </div>
-    <p class="notify-count"><b id="npCount">0</b> / 5 条 · 你还没读完这一节</p>
-  </div>
-</section>
-
-<!-- ========== 10 CHART · d=0.58 ========== -->
-<section class="sec" id="chart" data-bg="#141A24" data-fg="#E2E8F0" data-ac="#3E6FA8" data-d="0.58">
+<!-- ========== 09 CHART · d=0.60 ========== -->
+<section id="chart" class="sec burst-stage" data-bg="#141A24" data-fg="#E2E8F0" data-ac="#3E6FA8" data-d="0.60" data-tfade="0.30">
+  <div class="grain grain--chart" aria-hidden="true"></div>
   <div class="wrap">
     <div class="center">
       <div class="kicker" data-i18n="chart.kicker">行情回顾</div>
       <h2 data-i18n="chart.h2">一切看起来都很顺利</h2>
       <p class="lead" data-i18n="chart.lead">直到 18:00 那根 K 线出现。</p>
     </div>
-    <div class="chart-panel">
+    <div class="chart-panel" id="chartPanel">
       <div class="chart-hud">
         <span data-i18n="chart.pair">USD/JPY · 1H</span>
         <span id="chartPnl" class="up">+¥124,500</span>
@@ -290,24 +274,8 @@
   </div>
 </section>
 
-<!-- ========== 11 LOSSCUT · d=0.66 ========== -->
-<section class="losscut" id="losscut" data-bg="#06080C" data-fg="#E9E4DE" data-ac="#A81E2C" data-d="0.66">
-  <div class="losscut__trap" id="losscutTrap">
-    <img class="losscut__vortex" src="assets/vortex.webp" alt="" aria-hidden="true" width="1500" height="1377" loading="lazy">
-    <div class="drips" id="drips" aria-hidden="true"></div>
-    <img class="losscut__title" id="losscutTitle" src="assets/losscut-title.png" alt="强制平仓" width="1440" height="211" loading="lazy">
-    <img class="losscut__kurumi" id="losscutKurumi" src="assets/kurumi-fall.webp" alt="久留美被强制平仓，向后坠落" width="1000" height="918" loading="lazy">
-    <div class="losscut__blackout" id="losscutBlack"></div>
-    <div class="losscut__copy">
-      <p class="losscut__line" id="lsLine1">系统已按规则自动平仓。</p>
-      <p class="losscut__line" id="lsLine2">你的持仓全部清空。</p>
-      <p class="losscut__line small" id="lsLine3">未实现亏损 −¥300,000 · 追加保证金 ¥84,200 · 剩余 0</p>
-    </div>
-  </div>
-</section>
-
-<!-- ========== 12 LOG · d=0.74 — 系统不会安慰你 ========== -->
-<section class="log" id="log" data-bg="#08070A" data-fg="#B8AD9F" data-ac="#A3140B" data-d="0.74">
+<!-- ========== 10 LOG · d=0.80 — 系统不会安慰你 ========== -->
+<section class="log" id="log" data-bg="#08070A" data-fg="#B8AD9F" data-ac="#A3140B" data-d="0.80">
   <div class="log__stick">
     <div class="term" id="term">
       <div class="l">[kurumi-fx] 客户端 3.0.14 · 连接正常</div>
@@ -329,57 +297,18 @@
   </div>
 </section>
 
-<!-- ========== 13 YOU · d=0.82 — 本页一直在数 ========== -->
-<section class="sec you" id="you" data-bg="#100A0E" data-fg="#DCD3D3" data-ac="#8C1220" data-d="0.82">
+<!-- ========== 11 WARNING · d=0.90 — 只留那一块警示牌 ========== -->
+<section id="warning" class="sec" data-bg="#1E161C" data-fg="#EFE6EC" data-ac="#A83852" data-d="0.90">
   <div class="wrap">
-    <div class="center">
-      <div class="kicker" data-i18n="you.kicker">你的记录</div>
-      <h2 data-i18n="you.h2">本页一直在数</h2>
-    </div>
-    <div class="readout" id="readout">
-      <div class="readout__row"><span>会话</span><b id="youSession">—</b></div>
-      <div class="readout__row"><span>本地时间</span><b id="youClock">—</b></div>
-      <div class="readout__row"><span>停留时长</span><b id="youDwell">—</b></div>
-      <div class="readout__row"><span>往回滚</span><b id="youBack">—</b></div>
-      <div class="readout__row"><span>停留最久的一屏</span><b id="youLongest">—</b></div>
-    </div>
-    <p class="you-line" id="youLine">你比看「真相」那一屏多花了 32 秒。</p>
-    <p class="you-note" data-i18n="you.note">以上数据只保存在你的浏览器里。<br><b>暂时。</b></p>
-  </div>
-</section>
-
-<!-- ========== 14 WARNING · d=0.88 ========== -->
-<section class="sec" data-bg="#1E161C" data-fg="#EFE6EC" data-ac="#A83852" data-d="0.88">
-  <div class="wrap">
-    <div class="center">
-      <div class="kicker" data-i18n="warning.kicker">动画开播前的警告</div>
-      <h2 data-i18n="warning.h2">这不是吓唬你</h2>
-    </div>
     <div class="official-warning twitch">
       <div class="warn-badge">⚠</div>
       <p data-i18n="warning.text">外汇保证金交易存在风险。损失可能超过您所投入的保证金。过度交易可能对您的日常生活造成严重影响。请在充分了解风险后，谨慎做出决定。</p>
       <small data-i18n="warning.source">—— 改编自《FX战士久留美》动画开播风险提示</small>
     </div>
-    <p class="center aside" data-i18n="warning.note">一部动画，要在开播前用整整半分钟提醒观众风险。<br>这说明什么？</p>
   </div>
 </section>
 
-<!-- ========== 15 TRUTH · d=0.93 ========== -->
-<section class="sec" data-bg="#121016" data-fg="#E8E2EC" data-ac="#8A3A5A" data-d="0.93">
-  <div class="wrap center">
-    <div class="kicker" data-i18n="truth.kicker">真相</div>
-    <h2 class="truth-title" data-i18n-html="truth.h2">交易本身不是赌博。<br>失控的它才是。</h2>
-    <p class="lead" data-i18n="truth.lead">问题不在外汇，而在高杠杆、追损和停不下来的手。<br>当输赢不再取决于判断，而取决于你还能撑几次——它就变成了赌博。</p>
-    <div class="truth-facts">
-      <div class="fact"><b>25×</b><span data-i18n="fact.leverage">杠杆放大波动：约 4% 的不利变动，就可能吃掉全部本金</span></div>
-      <div class="fact"><b>03:14</b><span data-i18n="fact.time">久留美在凌晨三点还在看盘</span></div>
-      <div class="fact"><b>∞</b><span data-i18n="fact.loop">「再最后一次」的循环，没有终点</span></div>
-    </div>
-    <p class="fact-note">注：以上为简化示意。实际杠杆、保证金比例、强平线与负余额保护规则因交易商、品种和地区而异。</p>
-  </div>
-</section>
-
-<!-- ========== 16 END · d=1 ========== -->
+<!-- ========== 12 END · d=1 ========== -->
 <section class="end" id="end" data-bg="#180E10" data-fg="#F5E6E6" data-ac="#C8102E" data-d="1">
   <div class="stick">
     <button type="button" class="back-to-top" id="backToTop">↑ 回到顶部</button>
@@ -413,6 +342,17 @@
     <a href="#top" class="back" data-i18n="footer.top">↑ 回到顶部</a>
   </div>
 </footer>
+
+<!-- ========== 故障转场（图表崩盘 → 坠落） ========== -->
+<div id="glitchFX" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<!-- ========== 坠落：淡入 → 掉进黑洞 → 淡出（只放一次） ========== -->
+<div id="fall" aria-hidden="true">
+  <img class="fall__vortex" src="assets/vortex.webp" alt="" width="1500" height="1377" loading="lazy">
+  <div class="fall__hole"></div>
+  <img class="fall__title" src="assets/losscut-title.png" alt="强制平仓" width="1440" height="211" loading="lazy">
+  <img class="fall__kurumi" src="assets/kurumi-fall.webp" alt="" width="1000" height="918" loading="lazy">
+</div>
 
 <!-- ========== 全屏惊吓层 ========== -->
 <div id="scare" aria-hidden="true">
